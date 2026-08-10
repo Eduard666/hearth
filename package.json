@@ -10,7 +10,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder --win --config electron-builder.yml",
-    "release": "electron-vite build && electron-builder --win --config electron-builder.yml --publish always",
+    "release": "node scripts/tag-release.mjs && electron-vite build && electron-builder --win --config electron-builder.yml --publish always",
     "postinstall": "node node_modules/electron/install.js",
     "rebuild": "electron-builder install-app-deps"
   },
