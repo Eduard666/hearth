@@ -1,0 +1,66 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--gallery-bg);
+  overflow: hidden;
+}
+
+.grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+  align-content: start;
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--text-tertiary);
+  border: 2px dashed var(--border-default);
+  margin: var(--space-4);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--transition-base);
+}
+
+.emptyState:hover {
+  border-color: var(--accent);
+}
+
+.emptyIcon {
+  opacity: 0.5;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.emptySubtitle {
+  font-size: 13px;
+}
+
+.dragOverlay {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+}
+
+.dragCount {
+  font-size: 20px;
+  font-weight: 600;
+  color: white;
+}

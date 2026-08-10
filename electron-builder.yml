@@ -1,0 +1,47 @@
+appId: com.Eduard666.hearth
+productName: Hearth
+copyright: "Copyright 2024 Eduard666"
+
+directories:
+  buildResources: resources
+  output: release
+
+files:
+  - out/**/*
+  - node_modules/**/*
+  - "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+
+publish:
+  provider: github
+  owner: Eduard666
+  repo: hearth
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  artifactName: "Hearth-${version}-Setup.exe"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Hearth
+
+asar: true
+
+extraResources:
+  - from: resources/
+    to: resources/
+    filter:
+      - "**/*"

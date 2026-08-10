@@ -1,0 +1,77 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  border: 1px solid var(--tag-border);
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.removeTag {
+  display: flex;
+  align-items: center;
+  color: var(--tag-text);
+  opacity: 0.6;
+  transition: opacity var(--transition-fast);
+}
+
+.removeTag:hover {
+  opacity: 1;
+}
+
+.inputRow {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.input {
+  flex: 1;
+  padding: var(--space-2) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.addBtn {
+  padding: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background var(--transition-fast);
+}
+
+.addBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.addBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,72 @@
+.tree {
+  overflow: hidden;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: 2px;
+  padding-bottom: 2px;
+  padding-right: var(--space-3);
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  min-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.row.active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+}
+
+.row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform var(--transition-fast);
+}
+
+.chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-tertiary);
+}
+
+.name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
