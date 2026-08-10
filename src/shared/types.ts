@@ -9,26 +9,33 @@ export interface Photo {
   height: number
   fileSize: number
   importDate: string
-  tags: string[]
   collectionIds: number[]
-  platformStatuses: PlatformStatus[]
+  /** Where this photo has been posted, and when. Empty means not posted anywhere. */
+  posts: PhotoPost[]
   thumbnailPath: string | null
   originalExt: string
   convertedPath: string | null
 }
 
-export interface PlatformStatus {
-  destinationId: number
-  destinationName: string
-  posted: boolean
-  postedAt: string | null
-}
-
-export interface PlatformDestination {
+/**
+ * A place the user publishes to - a subreddit, a platform, whatever they name it.
+ * Shared across the whole workspace rather than owned by one model.
+ */
+export interface Tag {
   id: number
   name: string
   color: string
-  icon: string
+  createdAt: string
+  /** Number of photos posted to this tag, across every model. */
+  usageCount: number
+}
+
+/** A record that one photo went to one tag on one date. */
+export interface PhotoPost {
+  tagId: number
+  tagName: string
+  tagColor: string
+  postedAt: string
 }
 
 export interface Collection {
@@ -96,6 +103,17 @@ export interface UpdateInfo {
   releaseNotes: string
 }
 
+/**
+ * Colours for the native minimize/maximize/close buttons. The OS paints them, not the
+ * page, so the renderer has to hand its own resolved theme colours to the main process.
+ */
+export interface TitleBarColors {
+  /** Background behind the buttons; must match the title bar's CSS background. */
+  color: string
+  /** The glyphs themselves. */
+  symbolColor: string
+}
+
 export type UpdateStatus =
   | 'idle'
   | 'checking'
@@ -138,16 +156,16 @@ export type IpcApi = {
   convertHeic: (photoId: number) => Promise<Photo>
   rebuildThumbnails: () => Promise<void>
 
-  // tags
-  addTag: (photoIds: number[], tag: string) => Promise<void>
-  removeTag: (photoIds: number[], tag: string) => Promise<void>
-  getAllTags: () => Promise<string[]>
+  // tags - user-created posting destinations, shared across models
+  getTags: () => Promise<Tag[]>
+  createTag: (name: string, color?: string) => Promise<Tag>
+  updateTag: (id: number, name: string, color?: string) => Promise<void>
+  deleteTag: (id: number) => Promise<void>
 
-  // platform status
-  setPosted: (photoIds: number[], destinationId: number, posted: boolean) => Promise<void>
-  getDestinations: () => Promise<PlatformDestination[]>
-  addDestination: (name: string, color: string) => Promise<PlatformDestination>
-  deleteDestination: (id: number) => Promise<void>
+  // posting records
+  /** Marks photos as posted to a tag, stamping the date automatically. */
+  markPosted: (photoIds: number[], tagId: number) => Promise<void>
+  unmarkPosted: (photoIds: number[], tagId: number) => Promise<void>
 
   // collections - scoped to one model
   getCollections: (modelId?: number) => Promise<Collection[]>
@@ -188,7 +206,7 @@ export type IpcApi = {
   onThumbnailProgress: (cb: (progress: ThumbnailProgress) => void) => () => void
 
   // window chrome
-  setTitleBarTheme: (theme: 'light' | 'dark') => void
+  setTitleBarTheme: (colors: TitleBarColors) => void
 
   // updater
   getUpdateState: () => Promise<UpdateState>
@@ -201,6 +219,8 @@ export interface PhotoFilter {
   /** Required in practice - photos are only reachable through their model. */
   modelId?: number
   collectionId?: number
-  tags?: string[]
+  /** Photos posted to any of these tags. */
+  tagIds?: number[]
+  postedOnly?: boolean
   search?: string
 }

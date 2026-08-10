@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../../context/AppContext'
 import ModelList from './ModelList'
+import TagsModal from '../Tags/TagsModal'
 import styles from './Sidebar.module.css'
 
 export default function Sidebar(): JSX.Element {
@@ -10,6 +11,7 @@ export default function Sidebar(): JSX.Element {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [editingWorkspace, setEditingWorkspace] = useState(false)
+  const [showTags, setShowTags] = useState(false)
 
   const visibleModels = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -127,11 +129,18 @@ export default function Sidebar(): JSX.Element {
       </div>
 
       <div className={styles.footer}>
+        <button className={styles.footerItem} onClick={() => setShowTags(true)}>
+          <TagIcon />
+          <span>Tags</span>
+          {state.tags.length > 0 && <span className={styles.footerCount}>{state.tags.length}</span>}
+        </button>
         <button className={styles.footerItem} onClick={() => window.api.rebuildThumbnails()}>
           <RefreshIcon />
           <span>Rebuild previews</span>
         </button>
       </div>
+
+      {showTags && <TagsModal onClose={() => setShowTags(false)} />}
     </aside>
   )
 }
@@ -152,6 +161,15 @@ function PlusIcon(): JSX.Element {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+function TagIcon(): JSX.Element {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" y1="7" x2="7.01" y2="7" />
     </svg>
   )
 }

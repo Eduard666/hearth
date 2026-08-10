@@ -17,7 +17,13 @@ export default function VersionBadge(): JSX.Element | null {
   const ready = update.status === 'downloaded' && update.availableVersion != null
   const outdated = downloading || ready
 
-  const check = async (): Promise<void> => {
+  // One control, two jobs: install the waiting update if there is one, otherwise go and
+  // look for one. Clicking the version never leaves the user on a stale build.
+  const activate = async (): Promise<void> => {
+    if (ready) {
+      window.api.installUpdate()
+      return
+    }
     setChecking(true)
     try {
       const next = await window.api.checkForUpdates()
@@ -30,8 +36,8 @@ export default function VersionBadge(): JSX.Element | null {
   return (
     <button
       className={`${styles.badge} ${outdated ? styles.badgeOutdated : ''}`}
-      onClick={check}
-      disabled={checking || update.status === 'checking'}
+      onClick={activate}
+      disabled={checking || update.status === 'checking' || downloading}
       title={title(update.status, checking, update.availableVersion, update.error)}
     >
       {outdated && <span className={styles.dot} />}
@@ -43,7 +49,7 @@ export default function VersionBadge(): JSX.Element | null {
           downloading{update.percent != null ? ` ${update.percent}%` : '…'}
         </span>
       ) : ready ? (
-        <span className={styles.hint}>update ready</span>
+        <span className={styles.hint}>click to update</span>
       ) : null}
     </button>
   )
@@ -57,7 +63,7 @@ function title(
 ): string {
   if (checking || status === 'checking') return 'Checking for updates…'
   if (status === 'downloading') return `Downloading version ${availableVersion}…`
-  if (status === 'downloaded') return `Version ${availableVersion} is ready to install`
+  if (status === 'downloaded') return `Click to update to version ${availableVersion} and restart`
   if (status === 'up-to-date') return 'Up to date - click to check again'
   if (status === 'error') return `Update check failed: ${error ?? 'unknown error'}`
   return 'Click to check for updates'

@@ -86,56 +86,12 @@
 /* Height is fixed (and mirrored by CARD_META_HEIGHT in Gallery.tsx) so every card in the
    virtualized grid occupies exactly one row slot regardless of tag or badge count. */
 .meta {
-  height: 62px;
+  height: 44px;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   padding-top: var(--space-1);
   overflow: hidden;
-}
-
-.badges {
-  display: flex;
-  gap: 3px;
-  padding: 0 var(--space-2);
-  flex-wrap: wrap;
-  flex: none;
-  max-height: 18px;
-  overflow: hidden;
-}
-
-.badge {
-  height: 18px;
-  min-width: 18px;
-  padding: 0 4px;
-  border-radius: 3px;
-  border: 1px solid var(--border-default);
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--transition-fast);
-  cursor: pointer;
-}
-
-.badgeUnposted {
-  background: var(--bg-raised);
-  color: var(--text-tertiary);
-}
-
-.badgeUnposted:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.badgePosted {
-  color: white;
-  opacity: 0.9;
-}
-
-.badgePosted:hover {
-  opacity: 1;
 }
 
 .name {
@@ -149,28 +105,71 @@
   flex: none;
 }
 
-.tags {
+/* Posted indicator - a photo that has gone out somewhere */
+.postedBadge {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* 3-dot menu, revealed on hover so it does not clutter the grid */
+.menuBtn {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+}
+
+.card:hover .menuBtn {
+  opacity: 1;
+}
+
+.menuBtn:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.postTags {
   display: flex;
   gap: 3px;
   padding: 0 var(--space-2);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex: none;
   max-height: 17px;
   overflow: hidden;
 }
 
-.tag {
+.postTag {
   padding: 1px 5px;
-  background: var(--tag-bg);
-  color: var(--tag-text);
-  border: 1px solid var(--tag-border);
+  border: 1px solid;
   border-radius: 3px;
   font-size: 10px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 96px;
 }
 
-.tagMore {
+.postTagMore {
   font-size: 10px;
   color: var(--text-tertiary);
   padding: 1px 2px;
+  flex-shrink: 0;
 }

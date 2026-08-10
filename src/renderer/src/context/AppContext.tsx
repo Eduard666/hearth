@@ -12,7 +12,7 @@ import type {
   PhotoAssets,
   Collection,
   Model,
-  PlatformDestination,
+  Tag,
   UpdateState
 } from '../../../shared/types'
 
@@ -23,7 +23,7 @@ interface AppState {
   photos: Photo[]
   collections: Collection[]
   models: Model[]
-  destinations: PlatformDestination[]
+  tags: Tag[]
   /** The model whose space is open; null means the onboarding/picker screen. */
   activeModelId: number | null
   activeCollectionId: number | null
@@ -44,7 +44,7 @@ type AppAction =
   | { type: 'SET_PHOTOS'; payload: Photo[] }
   | { type: 'SET_COLLECTIONS'; payload: Collection[] }
   | { type: 'SET_MODELS'; payload: Model[] }
-  | { type: 'SET_DESTINATIONS'; payload: PlatformDestination[] }
+  | { type: 'SET_TAGS'; payload: Tag[] }
   | { type: 'SET_WORKSPACE_NAME'; payload: string }
   | { type: 'OPEN_MODEL'; payload: number }
   | { type: 'CLOSE_MODEL' }
@@ -67,7 +67,7 @@ const initialState: AppState = {
   photos: [],
   collections: [],
   models: [],
-  destinations: [],
+  tags: [],
   activeModelId: null,
   activeCollectionId: null,
   activeTab: 'photos',
@@ -88,8 +88,8 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, collections: action.payload }
     case 'SET_MODELS':
       return { ...state, models: action.payload }
-    case 'SET_DESTINATIONS':
-      return { ...state, destinations: action.payload }
+    case 'SET_TAGS':
+      return { ...state, tags: action.payload }
     case 'SET_WORKSPACE_NAME':
       return { ...state, workspaceName: action.payload }
     case 'OPEN_MODEL':
@@ -180,7 +180,7 @@ interface AppContextValue {
   loadPhotos: () => Promise<void>
   loadCollections: () => Promise<void>
   loadModels: () => Promise<Model[]>
-  loadDestinations: () => Promise<void>
+  loadTags: () => Promise<void>
   openModel: (id: number) => void
 }
 
@@ -218,9 +218,9 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     return models
   }, [])
 
-  const loadDestinations = useCallback(async () => {
-    const destinations = await window.api.getDestinations()
-    dispatch({ type: 'SET_DESTINATIONS', payload: destinations })
+  const loadTags = useCallback(async () => {
+    const tags = await window.api.getTags()
+    dispatch({ type: 'SET_TAGS', payload: tags })
   }, [])
 
   const openModel = useCallback((id: number) => {
@@ -233,7 +233,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   // onboarding screen when the workspace has no models at all.
   useEffect(() => {
     void (async () => {
-      const [models] = await Promise.all([loadModels(), loadDestinations()])
+      const [models] = await Promise.all([loadModels(), loadTags()])
       const settings = await window.api.getSettings()
       dispatch({ type: 'SET_WORKSPACE_NAME', payload: settings.workspaceName })
 
@@ -280,7 +280,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         loadPhotos,
         loadCollections,
         loadModels,
-        loadDestinations,
+        loadTags,
         openModel
       }}
     >

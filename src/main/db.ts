@@ -108,10 +108,13 @@ const BASE_SCHEMA = `
   );
 `
 
-const LATEST_VERSION = 1
+const LATEST_VERSION = 2
 
 function runMigrations(): void {
-  db.exec(BASE_SCHEMA)
+  // Only lay down the baseline on a brand new database. Running it every launch would
+  // re-create tables that later migrations deliberately drop, because CREATE TABLE IF NOT
+  // EXISTS cannot tell "never existed" from "removed on purpose".
+  if (isFreshDatabase()) db.exec(BASE_SCHEMA)
 
   const version = db.pragma('user_version', { simple: true }) as number
   if (version >= LATEST_VERSION) {
@@ -119,18 +122,24 @@ function runMigrations(): void {
     return
   }
 
-  if (version < 1) {
-    backupDatabase(1)
-    migrateToModelCentric()
-  }
+  backupDatabase(LATEST_VERSION)
+
+  if (version < 1) migrateToModelCentric()
+  if (version < 2) migrateToPostingTags()
 
   db.pragma(`user_version = ${LATEST_VERSION}`)
   seedDefaults()
 }
 
+function isFreshDatabase(): boolean {
+  const row = db
+    .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'photos'")
+    .get() as { c: number }
+  return row.c === 0
+}
+
 function seedDefaults(): void {
   seedDefaultSettings()
-  seedDefaultDestinations()
 }
 
 /** Structural migrations rebuild tables, so keep a copy of what was there before. */
@@ -289,6 +298,57 @@ function rebuildCollectionsTable(fallbackModelId: number | null): void {
   `)
 }
 
+/**
+ * v2 - tags are user-created posting destinations, shared across the workspace.
+ *
+ * A tag is somewhere a photo gets published (a subreddit, a platform), and marking a
+ * photo posted records the date against that tag. This replaces three things at once:
+ * free-form text tags, the seeded platform_destinations, and platform_statuses - which
+ * were all modelling pieces of the same idea.
+ */
+function migrateToPostingTags(): void {
+  const rows = (table: string): number => {
+    try {
+      return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c
+    } catch {
+      return 0
+    }
+  }
+
+  // Nothing here ever carried real data - the destinations were seeded defaults. Anything
+  // unexpected is logged rather than silently dropped.
+  const orphaned = rows('tags') + rows('platform_statuses')
+  if (orphaned > 0) {
+    console.warn(`[db] v2 migration discarding ${orphaned} legacy tag/status rows`)
+  }
+
+  db.exec(`
+    DROP TABLE IF EXISTS tags;
+    DROP TABLE IF EXISTS platform_statuses;
+    DROP TABLE IF EXISTS platform_destinations;
+    -- v1 dropped this, but the old baseline kept re-creating it on every launch.
+    DROP TABLE IF EXISTS model_photos;
+
+    CREATE TABLE tags (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL COLLATE NOCASE,
+      color      TEXT NOT NULL DEFAULT '#6366f1',
+      created_at TEXT NOT NULL,
+      UNIQUE(name COLLATE NOCASE)
+    );
+
+    CREATE TABLE photo_posts (
+      photo_id  INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+      tag_id    INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      posted_at TEXT NOT NULL,
+      PRIMARY KEY (photo_id, tag_id)
+    );
+
+    CREATE INDEX idx_photo_posts_photo ON photo_posts(photo_id);
+    CREATE INDEX idx_photo_posts_tag ON photo_posts(tag_id);
+  `)
+}
+
 function tableColumns(table: string): string[] {
   const rows = db.pragma(`table_info(${table})`) as { name: string }[]
   return rows.map((r) => r.name)
@@ -318,14 +378,4 @@ function seedDefaultSettings(): void {
   insertMany(Object.entries(defaults))
 }
 
-function seedDefaultDestinations(): void {
-  const defaults = [
-    { name: 'Reddit', color: '#ff4500', icon: 'reddit' },
-    { name: 'X', color: '#000000', icon: 'x' },
-    { name: 'Fanvue', color: '#6d28d9', icon: 'fanvue' }
-  ]
-  const insert = db.prepare(
-    'INSERT OR IGNORE INTO platform_destinations (name, color, icon) VALUES (?, ?, ?)'
-  )
-  for (const d of defaults) insert.run(d.name, d.color, d.icon)
-}
+// Tags are deliberately not seeded: they are the user's own posting destinations.

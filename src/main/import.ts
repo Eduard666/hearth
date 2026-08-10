@@ -199,9 +199,9 @@ function rowToPhoto(row: RawPhotoRow): Photo {
     originalExt: row.original_ext,
     convertedPath: row.converted_path,
     thumbnailPath: row.thumbnail_path,
-    tags: [],
     collectionIds: [],
-    platformStatuses: []
+    // Only used to describe duplicates found during import, which have no posts yet.
+    posts: []
   }
 }
 

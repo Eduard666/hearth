@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import type { Photo, PlatformDestination } from '../../../../shared/types'
+import type { Photo } from '../../../../shared/types'
 import { mediaUrl } from '../../../../shared/media'
 import styles from './PhotoCard.module.css'
+
+export type CardMenuKind = 'actions' | 'posted'
 
 interface PhotoCardProps {
   photo: Photo
   selected: boolean
   onClick: (e: React.MouseEvent) => void
-  destinations: PlatformDestination[]
+  onOpenMenu: (kind: CardMenuKind, photo: Photo, x: number, y: number) => void
   onRefresh: () => void
 }
 
@@ -16,7 +18,7 @@ export default function PhotoCard({
   photo,
   selected,
   onClick,
-  destinations,
+  onOpenMenu,
   onRefresh
 }: PhotoCardProps): JSX.Element {
   const [converting, setConverting] = useState(false)
@@ -27,6 +29,8 @@ export default function PhotoCard({
   // Chromium can render the original for everything except HEIC, which needs the decoded copy.
   const displayPath =
     photo.thumbnailPath ?? photo.convertedPath ?? (isHeic ? null : photo.filePath)
+
+  const posted = photo.posts.length > 0
 
   const handleConvert = async (e: React.MouseEvent): Promise<void> => {
     e.stopPropagation()
@@ -39,12 +43,6 @@ export default function PhotoCard({
     }
   }
 
-  const togglePosted = async (e: React.MouseEvent, destinationId: number, currentlyPosted: boolean): Promise<void> => {
-    e.stopPropagation()
-    await window.api.setPosted([photo.id], destinationId, !currentlyPosted)
-    onRefresh()
-  }
-
   return (
     <div
       ref={setNodeRef}
@@ -52,8 +50,11 @@ export default function PhotoCard({
       {...attributes}
       className={`${styles.card} ${selected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
       onClick={onClick}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onOpenMenu('posted', photo, e.clientX, e.clientY)
+      }}
     >
-      {/* Thumbnail */}
       <div className={styles.thumb}>
         {displayPath ? (
           <img
@@ -80,48 +81,71 @@ export default function PhotoCard({
             </svg>
           </div>
         )}
+
+        {/* Posted indicator - where it went and when */}
+        {posted && (
+          <div className={styles.postedBadge} title={postedSummary(photo)}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+        )}
+
+        <button
+          className={styles.menuBtn}
+          title="Photo options"
+          onClick={(e) => {
+            e.stopPropagation()
+            const rect = e.currentTarget.getBoundingClientRect()
+            onOpenMenu('actions', photo, rect.right, rect.bottom)
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="12" cy="19" r="1.7" />
+          </svg>
+        </button>
       </div>
 
       {/* Fixed-height meta block - the virtualized grid needs uniform card heights */}
       <div className={styles.meta}>
-        {/* Platform status badges */}
-        {destinations.length > 0 && (
-          <div className={styles.badges}>
-            {destinations.map((dest) => {
-              const status = photo.platformStatuses.find((s) => s.destinationId === dest.id)
-              const posted = status?.posted ?? false
-              return (
-                <button
-                  key={dest.id}
-                  className={`${styles.badge} ${posted ? styles.badgePosted : styles.badgeUnposted}`}
-                  style={posted ? { backgroundColor: dest.color, borderColor: dest.color } : {}}
-                  onClick={(e) => togglePosted(e, dest.id, posted)}
-                  title={`${posted ? 'Posted' : 'Not posted'} on ${dest.name}`}
-                >
-                  {dest.name[0]}
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Filename */}
         <div className={styles.name} title={fileName}>
           {fileName}
         </div>
 
-        {/* Tags preview */}
-        {photo.tags.length > 0 && (
-          <div className={styles.tags}>
-            {photo.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className={styles.tag}>{tag}</span>
+        {posted && (
+          <div className={styles.postTags}>
+            {photo.posts.slice(0, 2).map((post) => (
+              <span
+                key={post.tagId}
+                className={styles.postTag}
+                style={{ borderColor: post.tagColor, color: post.tagColor }}
+                title={`${post.tagName} · ${formatDate(post.postedAt)}`}
+              >
+                {post.tagName}
+              </span>
             ))}
-            {photo.tags.length > 3 && (
-              <span className={styles.tagMore}>+{photo.tags.length - 3}</span>
+            {photo.posts.length > 2 && (
+              <span className={styles.postTagMore}>+{photo.posts.length - 2}</span>
             )}
           </div>
         )}
       </div>
     </div>
   )
+}
+
+function postedSummary(photo: Photo): string {
+  return photo.posts
+    .map((post) => `${post.tagName} · ${formatDate(post.postedAt)}`)
+    .join('\n')
+}
+
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })
 }

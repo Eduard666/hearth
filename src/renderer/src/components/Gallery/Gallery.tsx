@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -9,20 +9,30 @@ import {
   type DragEndEvent
 } from '@dnd-kit/core'
 import { useApp } from '../../context/AppContext'
-import PhotoCard from './PhotoCard'
+import PhotoCard, { type CardMenuKind } from './PhotoCard'
 import GalleryToolbar from './GalleryToolbar'
 import CollectionChips from './CollectionChips'
 import DuplicateModal from './DuplicateModal'
+import CardMenu from './CardMenu'
+import PostedMenu from './PostedMenu'
+import PhotoActionsMenu from './PhotoActionsMenu'
 import { useVirtualGrid } from './useVirtualGrid'
-import type { ImportResult } from '../../../../shared/types'
+import type { ImportResult, Photo } from '../../../../shared/types'
 import styles from './Gallery.module.css'
+
+interface OpenMenu {
+  kind: CardMenuKind
+  photoId: number
+  x: number
+  y: number
+}
 
 // Kept in sync with Gallery.module.css / PhotoCard.module.css: the virtualizer needs
 // concrete numbers to derive row height from the measured column width.
 const GRID_GAP = 12
 const GRID_PADDING = 16
 const MIN_COLUMN_WIDTH = 180
-const CARD_META_HEIGHT = 62
+const CARD_META_HEIGHT = 44
 
 interface GalleryProps {
   /** Opens the model-scoped import picker from the empty state. */
@@ -34,6 +44,7 @@ export default function Gallery({ onImport }: GalleryProps): JSX.Element {
   const [activeId, setActiveId] = useState<number | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+  const [menu, setMenu] = useState<OpenMenu | null>(null)
   const lastClickedId = useRef<number | null>(null)
 
   const grid = useVirtualGrid(scroller, {
@@ -70,6 +81,26 @@ export default function Gallery({ onImport }: GalleryProps): JSX.Element {
     },
     [state.photos, dispatch]
   )
+
+  // Menus act on the whole selection when the click landed inside it, and otherwise on
+  // just the photo that was clicked - the behaviour people expect from a file manager.
+  const openMenu = useCallback(
+    (kind: CardMenuKind, photo: Photo, x: number, y: number) => {
+      if (!state.selectedPhotoIds.includes(photo.id)) {
+        dispatch({ type: 'SELECT_PHOTOS', payload: [photo.id] })
+      }
+      setMenu({ kind, photoId: photo.id, x, y })
+    },
+    [state.selectedPhotoIds, dispatch]
+  )
+
+  const menuPhotos = useMemo(() => {
+    if (!menu) return []
+    const selected = state.photos.filter((p) => state.selectedPhotoIds.includes(p.id))
+    if (selected.some((p) => p.id === menu.photoId)) return selected
+    const single = state.photos.find((p) => p.id === menu.photoId)
+    return single ? [single] : []
+  }, [menu, state.photos, state.selectedPhotoIds])
 
   const handleDragStart = (event: DragStartEvent): void => {
     const id = event.active.id as number
@@ -189,7 +220,7 @@ export default function Gallery({ onImport }: GalleryProps): JSX.Element {
                     photo={photo}
                     selected={state.selectedPhotoIds.includes(photo.id)}
                     onClick={(e) => handleCardClick(photo.id, e)}
-                    destinations={state.destinations}
+                    onOpenMenu={openMenu}
                     onRefresh={loadPhotos}
                   />
                 ))}
@@ -208,6 +239,24 @@ export default function Gallery({ onImport }: GalleryProps): JSX.Element {
           )}
         </DragOverlay>
       </div>
+
+      {menu && menuPhotos.length > 0 && (
+        <CardMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          {menu.kind === 'posted' ? (
+            <PostedMenu
+              photos={menuPhotos}
+              onDone={loadPhotos}
+              onClose={() => setMenu(null)}
+            />
+          ) : (
+            <PhotoActionsMenu
+              photos={menuPhotos}
+              onDone={loadPhotos}
+              onClose={() => setMenu(null)}
+            />
+          )}
+        </CardMenu>
+      )}
 
       {importResult && (
         <DuplicateModal

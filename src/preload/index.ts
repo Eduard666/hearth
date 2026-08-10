@@ -11,16 +11,14 @@ const api: IpcApi = {
   rebuildThumbnails: () => ipcRenderer.invoke('photos:rebuildThumbnails'),
 
   // tags
-  addTag: (photoIds, tag) => ipcRenderer.invoke('tags:add', photoIds, tag),
-  removeTag: (photoIds, tag) => ipcRenderer.invoke('tags:remove', photoIds, tag),
-  getAllTags: () => ipcRenderer.invoke('tags:getAll'),
+  getTags: () => ipcRenderer.invoke('tags:get'),
+  createTag: (name, color) => ipcRenderer.invoke('tags:create', name, color),
+  updateTag: (id, name, color) => ipcRenderer.invoke('tags:update', id, name, color),
+  deleteTag: (id) => ipcRenderer.invoke('tags:delete', id),
 
-  // platform status
-  setPosted: (photoIds, destinationId, posted) =>
-    ipcRenderer.invoke('platform:setPosted', photoIds, destinationId, posted),
-  getDestinations: () => ipcRenderer.invoke('platform:getDestinations'),
-  addDestination: (name, color) => ipcRenderer.invoke('platform:addDestination', name, color),
-  deleteDestination: (id) => ipcRenderer.invoke('platform:deleteDestination', id),
+  // posting records
+  markPosted: (photoIds, tagId) => ipcRenderer.invoke('posts:mark', photoIds, tagId),
+  unmarkPosted: (photoIds, tagId) => ipcRenderer.invoke('posts:unmark', photoIds, tagId),
 
   // collections
   getCollections: (modelId) => ipcRenderer.invoke('collections:get', modelId),
@@ -69,7 +67,7 @@ const api: IpcApi = {
   },
 
   // window chrome
-  setTitleBarTheme: (theme) => ipcRenderer.send('window:setTitleBarTheme', theme),
+  setTitleBarTheme: (colors) => ipcRenderer.send('window:setTitleBarTheme', colors),
 
   // updater
   getUpdateState: () => ipcRenderer.invoke('update:getState'),

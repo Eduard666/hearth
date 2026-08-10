@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { getDb } from '../db'
 import { importPhotos } from '../import'
 import { backfillThumbnails, buildPhotoAssets, persistPhotoAssets } from '../thumbnails'
-import type { Photo, PlatformStatus, PhotoFilter } from '../../shared/types'
+import type { Photo, PhotoPost, PhotoFilter } from '../../shared/types'
 
 interface RawPhotoRow {
   id: number
@@ -22,33 +22,30 @@ interface RawPhotoRow {
 function rowToPhoto(row: RawPhotoRow): Photo {
   const db = getDb()
 
-  const tags = (
-    db.prepare('SELECT tag FROM tags WHERE photo_id = ?').all(row.id) as { tag: string }[]
-  ).map((t) => t.tag)
-
   const collectionIds = (
     db
       .prepare('SELECT collection_id FROM collection_photos WHERE photo_id = ?')
       .all(row.id) as { collection_id: number }[]
   ).map((c) => c.collection_id)
 
-  const platformStatuses: PlatformStatus[] = (
+  const posts: PhotoPost[] = (
     db.prepare(`
-      SELECT ps.destination_id, pd.name as destination_name, ps.posted, ps.posted_at
-      FROM platform_statuses ps
-      JOIN platform_destinations pd ON pd.id = ps.destination_id
-      WHERE ps.photo_id = ?
+      SELECT pp.tag_id, t.name AS tag_name, t.color AS tag_color, pp.posted_at
+      FROM photo_posts pp
+      JOIN tags t ON t.id = pp.tag_id
+      WHERE pp.photo_id = ?
+      ORDER BY pp.posted_at DESC
     `).all(row.id) as {
-      destination_id: number
-      destination_name: string
-      posted: number
-      posted_at: string | null
+      tag_id: number
+      tag_name: string
+      tag_color: string
+      posted_at: string
     }[]
-  ).map((s) => ({
-    destinationId: s.destination_id,
-    destinationName: s.destination_name,
-    posted: s.posted === 1,
-    postedAt: s.posted_at
+  ).map((p) => ({
+    tagId: p.tag_id,
+    tagName: p.tag_name,
+    tagColor: p.tag_color,
+    postedAt: p.posted_at
   }))
 
   return {
@@ -64,9 +61,8 @@ function rowToPhoto(row: RawPhotoRow): Photo {
     originalExt: row.original_ext,
     convertedPath: row.converted_path,
     thumbnailPath: row.thumbnail_path,
-    tags,
     collectionIds,
-    platformStatuses
+    posts
   }
 }
 
@@ -88,10 +84,13 @@ export function registerPhotoHandlers(): void {
       sql += ' AND id IN (SELECT photo_id FROM collection_photos WHERE collection_id = ?)'
       params.push(filter.collectionId)
     }
-    if (filter?.tags && filter.tags.length > 0) {
-      const placeholders = filter.tags.map(() => '?').join(',')
-      sql += ` AND id IN (SELECT photo_id FROM tags WHERE tag IN (${placeholders}) GROUP BY photo_id HAVING COUNT(DISTINCT tag) = ?)`
-      params.push(...filter.tags, filter.tags.length)
+    if (filter.tagIds && filter.tagIds.length > 0) {
+      const placeholders = filter.tagIds.map(() => '?').join(',')
+      sql += ` AND id IN (SELECT photo_id FROM photo_posts WHERE tag_id IN (${placeholders}))`
+      params.push(...filter.tagIds)
+    }
+    if (filter.postedOnly) {
+      sql += ' AND id IN (SELECT photo_id FROM photo_posts)'
     }
 
     sql += ' ORDER BY import_date DESC'
@@ -123,59 +122,5 @@ export function registerPhotoHandlers(): void {
 
   ipcMain.handle('photos:rebuildThumbnails', async () => {
     void backfillThumbnails()
-  })
-
-  // tags
-  ipcMain.handle('tags:add', async (_e, photoIds: number[], tag: string) => {
-    const insert = db.prepare('INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)')
-    const tx = db.transaction(() => {
-      for (const id of photoIds) insert.run(id, tag.trim().toLowerCase())
-    })
-    tx()
-  })
-
-  ipcMain.handle('tags:remove', async (_e, photoIds: number[], tag: string) => {
-    const del = db.prepare('DELETE FROM tags WHERE photo_id = ? AND tag = ?')
-    const tx = db.transaction(() => {
-      for (const id of photoIds) del.run(id, tag.trim().toLowerCase())
-    })
-    tx()
-  })
-
-  ipcMain.handle('tags:getAll', async () => {
-    const rows = db.prepare('SELECT DISTINCT tag FROM tags ORDER BY tag').all() as { tag: string }[]
-    return rows.map((r) => r.tag)
-  })
-
-  // platform status
-  ipcMain.handle(
-    'platform:setPosted',
-    async (_e, photoIds: number[], destinationId: number, posted: boolean) => {
-      const upsert = db.prepare(`
-        INSERT INTO platform_statuses (photo_id, destination_id, posted, posted_at)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(photo_id, destination_id) DO UPDATE SET posted = excluded.posted, posted_at = excluded.posted_at
-      `)
-      const postedAt = posted ? new Date().toISOString() : null
-      const tx = db.transaction(() => {
-        for (const id of photoIds) upsert.run(id, destinationId, posted ? 1 : 0, postedAt)
-      })
-      tx()
-    }
-  )
-
-  ipcMain.handle('platform:getDestinations', async () => {
-    return db.prepare('SELECT * FROM platform_destinations ORDER BY name').all()
-  })
-
-  ipcMain.handle('platform:addDestination', async (_e, name: string, color: string) => {
-    const result = db
-      .prepare('INSERT INTO platform_destinations (name, color, icon) VALUES (?, ?, ?)')
-      .run(name.trim(), color, 'globe')
-    return db.prepare('SELECT * FROM platform_destinations WHERE id = ?').get(result.lastInsertRowid)
-  })
-
-  ipcMain.handle('platform:deleteDestination', async (_e, id: number) => {
-    db.prepare('DELETE FROM platform_destinations WHERE id = ?').run(id)
   })
 }

@@ -34,9 +34,20 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', resolved)
+
     // The native minimize/maximize/close buttons are painted by the OS, not the page, so
-    // the main process has to repaint the title bar overlay whenever the theme changes.
-    window.api.setTitleBarTheme(resolved)
+    // the main process has to repaint the overlay on every theme change. The colours are
+    // read back from the stylesheet rather than duplicated here, so the buttons cannot
+    // drift out of sync with the title bar they sit in.
+    const computed = getComputedStyle(document.documentElement)
+    const read = (token: string, fallback: string): string =>
+      computed.getPropertyValue(token).trim() || fallback
+
+    window.api.setTitleBarTheme({
+      // Must match .titlebar's background in AppLayout.module.css.
+      color: read('--sidebar-bg', resolved === 'dark' ? '#161616' : '#f0f0f0'),
+      symbolColor: read('--text-primary', resolved === 'dark' ? '#f0f0f0' : '#111111')
+    })
   }, [resolved])
 
   const setMode = (next: ThemeMode): void => {

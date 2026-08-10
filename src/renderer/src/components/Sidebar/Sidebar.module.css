@@ -357,6 +357,17 @@
   color: var(--text-primary);
 }
 
+.footerCount {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  background: var(--bg-raised);
+  border-radius: var(--radius-full);
+  padding: 0 6px;
+  line-height: 17px;
+}
+
 /* ---- Empty hint ---- */
 
 .emptyHint {
