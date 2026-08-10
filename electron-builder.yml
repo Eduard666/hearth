@@ -35,11 +35,18 @@ win:
   artifactName: "Hearth-${version}-Setup.exe"
 
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+  # One-click + per-user is what makes updates invisible, the way the Claude desktop app
+  # behaves. An assisted installer shows its progress and finish pages on every update,
+  # and a per-machine install under Program Files needs admin rights, so each update
+  # would raise a UAC prompt. Per-user installs land in %LOCALAPPDATA%\Programs and need
+  # no elevation, so the updater can swap the app out silently and relaunch it.
+  oneClick: true
+  perMachine: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Hearth
+  # Uninstalling must never take the photo library with it; it lives in userData.
+  deleteAppDataOnUninstall: false
 
 asar: true
 

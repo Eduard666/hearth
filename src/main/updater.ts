@@ -31,7 +31,12 @@ export function registerUpdaterHandlers(): void {
   })
 
   ipcMain.on('install-update', () => {
-    if (state.status === 'downloaded') autoUpdater.quitAndInstall()
+    if (state.status !== 'downloaded') return
+    // Both arguments matter. quitAndInstall() defaults to isSilent=false, which runs the
+    // NSIS installer interactively - and because this is an assisted installer
+    // (nsis.oneClick: false) that means the full setup wizard on every update. Silent
+    // install plus force-run gives the expected "closes and reopens updated" behaviour.
+    autoUpdater.quitAndInstall(true, true)
   })
 }
 
