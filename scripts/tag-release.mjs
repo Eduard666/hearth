@@ -12,8 +12,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const tag = `v${version}`
 
-const git = (args, opts = {}) =>
-  execFileSync('git', args, { cwd: root, encoding: 'utf8', ...opts }).trim()
+// execFileSync returns null when stdout is not piped ('inherit' / 'ignore'), so the
+// result has to be normalised before it can be treated as text.
+const git = (args, opts = {}) => {
+  const out = execFileSync('git', args, { cwd: root, encoding: 'utf8', ...opts })
+  return typeof out === 'string' ? out.trim() : ''
+}
 
 const exists = (args) => {
   try {
