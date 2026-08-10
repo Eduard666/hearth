@@ -1,7 +1,6 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-surface);
@@ -84,11 +83,25 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
+/* Height is fixed (and mirrored by CARD_META_HEIGHT in Gallery.tsx) so every card in the
+   virtualized grid occupies exactly one row slot regardless of tag or badge count. */
+.meta {
+  height: 62px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+  overflow: hidden;
+}
+
 .badges {
   display: flex;
   gap: 3px;
-  padding: 4px var(--space-2) 0;
+  padding: 0 var(--space-2);
   flex-wrap: wrap;
+  flex: none;
+  max-height: 18px;
+  overflow: hidden;
 }
 
 .badge {
@@ -128,17 +141,22 @@
 .name {
   padding: 0 var(--space-2);
   font-size: 11px;
+  line-height: 15px;
   color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: none;
 }
 
 .tags {
   display: flex;
   gap: 3px;
-  padding: 0 var(--space-2) var(--space-2);
+  padding: 0 var(--space-2);
   flex-wrap: wrap;
+  flex: none;
+  max-height: 17px;
+  overflow: hidden;
 }
 
 .tag {

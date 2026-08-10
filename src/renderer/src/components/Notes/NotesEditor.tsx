@@ -2,42 +2,40 @@ import { useState, useEffect, useCallback } from 'react'
 import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
-import { useApp } from '../../context/AppContext'
 import { useTheme } from '../../context/ThemeContext'
-import type { Note, Collection, Model } from '../../../../shared/types'
+import type { Note } from '../../../../shared/types'
 import styles from './NotesEditor.module.css'
 
-type NoteTarget =
-  | { kind: 'collection'; id: number; name: string }
-  | { kind: 'model'; id: number; name: string }
-  | null
+/** Notes always belong to a model - there is no global notes view. */
+export interface NoteTarget {
+  kind: 'model'
+  id: number
+  name: string
+}
 
-export default function NotesEditor(): JSX.Element {
-  const { state, dispatch, loadCollections, loadModels } = useApp()
+interface NotesEditorProps {
+  target: NoteTarget
+}
+
+export default function NotesEditor({ target }: NotesEditorProps): JSX.Element {
   const { resolved } = useTheme()
   const [notes, setNotes] = useState<Note[]>([])
   const [activeNote, setActiveNote] = useState<Note | null>(null)
-  const [target, setTarget] = useState<NoteTarget>(null)
   const [titleValue, setTitleValue] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saveTimeout, setSaveTimeout] = useState<ReturnType<typeof setTimeout> | null>(null)
 
   const editor = useCreateBlockNote()
 
-  const loadNotes = useCallback(async (tgt: NoteTarget) => {
-    const filter =
-      tgt?.kind === 'collection'
-        ? { collectionId: tgt.id }
-        : tgt?.kind === 'model'
-          ? { modelId: tgt.id }
-          : {}
-    const fetched = await window.api.getNotes(filter)
+  const loadNotes = useCallback(async (modelId: number) => {
+    const fetched = await window.api.getNotes({ modelId })
     setNotes(fetched)
   }, [])
 
   useEffect(() => {
-    loadNotes(target)
-  }, [target, loadNotes])
+    setActiveNote(null)
+    loadNotes(target.id)
+  }, [target.id, loadNotes])
 
   useEffect(() => {
     if (activeNote) {
@@ -73,8 +71,8 @@ export default function NotesEditor(): JSX.Element {
     const note = await window.api.createNote({
       title: 'Untitled note',
       content: '[]',
-      collectionId: target?.kind === 'collection' ? target.id : null,
-      modelId: target?.kind === 'model' ? target.id : null
+      collectionId: null,
+      modelId: target.id
     })
     setNotes((prev) => [note, ...prev])
     setActiveNote(note)
@@ -91,48 +89,10 @@ export default function NotesEditor(): JSX.Element {
       {/* Left column - target picker + note list */}
       <div className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
-          <span className={styles.sidebarTitle}>Notes</span>
+          <span className={styles.sidebarTitle}>{target.name}&apos;s notes</span>
           <button className={styles.newBtn} onClick={createNote} title="New note">
             <PlusIcon />
           </button>
-        </div>
-
-        {/* Target selector */}
-        <div className={styles.targetPicker}>
-          <button
-            className={`${styles.targetBtn} ${!target ? styles.targetActive : ''}`}
-            onClick={() => { setTarget(null); setActiveNote(null) }}
-          >
-            All notes
-          </button>
-          {state.collections.length > 0 && (
-            <div className={styles.targetGroup}>
-              <div className={styles.targetGroupLabel}>Collections</div>
-              {state.collections.map((c) => (
-                <button
-                  key={c.id}
-                  className={`${styles.targetBtn} ${target?.kind === 'collection' && target.id === c.id ? styles.targetActive : ''}`}
-                  onClick={() => { setTarget({ kind: 'collection', id: c.id, name: c.name }); setActiveNote(null) }}
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {state.models.length > 0 && (
-            <div className={styles.targetGroup}>
-              <div className={styles.targetGroupLabel}>Models</div>
-              {state.models.map((m) => (
-                <button
-                  key={m.id}
-                  className={`${styles.targetBtn} ${target?.kind === 'model' && target.id === m.id ? styles.targetActive : ''}`}
-                  onClick={() => { setTarget({ kind: 'model', id: m.id, name: m.name }); setActiveNote(null) }}
-                >
-                  {m.name}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Note list */}

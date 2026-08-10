@@ -9,27 +9,35 @@ import {
 } from 'react'
 import type {
   Photo,
+  PhotoAssets,
   Collection,
   Model,
   PlatformDestination,
-  Note,
-  PhotoFilter,
-  UpdateInfo
+  UpdateState
 } from '../../../shared/types'
+
+/** Sections inside a model's space. There is no view outside a model. */
+export type ModelTab = 'photos' | 'collections' | 'notes'
 
 interface AppState {
   photos: Photo[]
   collections: Collection[]
   models: Model[]
   destinations: PlatformDestination[]
-  notes: Note[]
+  /** The model whose space is open; null means the onboarding/picker screen. */
+  activeModelId: number | null
+  activeCollectionId: number | null
+  activeTab: ModelTab
+  workspaceName: string
   selectedPhotoIds: number[]
-  activeFilter: PhotoFilter
-  activeView: 'gallery' | 'notes'
-  activeNoteId: number | null
-  updateInfo: UpdateInfo | null
-  updateDownloaded: boolean
+  update: UpdateState | null
+  /** Set when the user dismisses the update toast, so it stops nagging for that version. */
+  dismissedUpdateVersion: string | null
   loading: boolean
+  /** Whether models have been fetched at least once, so onboarding does not flash. */
+  ready: boolean
+  /** Progress of the background pass that generates thumbnails; null when idle. */
+  thumbnailProgress: { done: number; total: number } | null
 }
 
 type AppAction =
@@ -37,37 +45,39 @@ type AppAction =
   | { type: 'SET_COLLECTIONS'; payload: Collection[] }
   | { type: 'SET_MODELS'; payload: Model[] }
   | { type: 'SET_DESTINATIONS'; payload: PlatformDestination[] }
-  | { type: 'SET_NOTES'; payload: Note[] }
+  | { type: 'SET_WORKSPACE_NAME'; payload: string }
+  | { type: 'OPEN_MODEL'; payload: number }
+  | { type: 'CLOSE_MODEL' }
+  | { type: 'SET_TAB'; payload: ModelTab }
+  | { type: 'SET_COLLECTION'; payload: number | null }
   | { type: 'SELECT_PHOTOS'; payload: number[] }
   | { type: 'TOGGLE_SELECT'; payload: number }
   | { type: 'SELECT_RANGE'; payload: { from: number; to: number; allIds: number[] } }
   | { type: 'CLEAR_SELECTION' }
-  | { type: 'SET_FILTER'; payload: PhotoFilter }
-  | { type: 'SET_VIEW'; payload: 'gallery' | 'notes' }
-  | { type: 'SET_ACTIVE_NOTE'; payload: number | null }
-  | { type: 'SET_UPDATE_AVAILABLE'; payload: UpdateInfo }
-  | { type: 'SET_UPDATE_DOWNLOADED'; payload: UpdateInfo }
+  | { type: 'SET_UPDATE'; payload: UpdateState }
   | { type: 'DISMISS_UPDATE' }
   | { type: 'SET_LOADING'; payload: boolean }
-  | { type: 'UPDATE_PHOTO'; payload: Photo }
-  | { type: 'REMOVE_PHOTO'; payload: number }
-  | { type: 'ADD_NOTE'; payload: Note }
-  | { type: 'UPDATE_NOTE'; payload: Note }
-  | { type: 'REMOVE_NOTE'; payload: number }
+  | { type: 'SET_READY' }
+  | {
+      type: 'THUMBNAIL_PROGRESS'
+      payload: { done: number; total: number; photoId?: number; assets?: PhotoAssets }
+    }
 
 const initialState: AppState = {
   photos: [],
   collections: [],
   models: [],
   destinations: [],
-  notes: [],
+  activeModelId: null,
+  activeCollectionId: null,
+  activeTab: 'photos',
+  workspaceName: 'My agency',
   selectedPhotoIds: [],
-  activeFilter: {},
-  activeView: 'gallery',
-  activeNoteId: null,
-  updateInfo: null,
-  updateDownloaded: false,
-  loading: false
+  update: null,
+  dismissedUpdateVersion: null,
+  loading: false,
+  ready: false,
+  thumbnailProgress: null
 }
 
 function reducer(state: AppState, action: AppAction): AppState {
@@ -80,8 +90,35 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, models: action.payload }
     case 'SET_DESTINATIONS':
       return { ...state, destinations: action.payload }
-    case 'SET_NOTES':
-      return { ...state, notes: action.payload }
+    case 'SET_WORKSPACE_NAME':
+      return { ...state, workspaceName: action.payload }
+    case 'OPEN_MODEL':
+      return {
+        ...state,
+        activeModelId: action.payload,
+        activeCollectionId: null,
+        activeTab: 'photos',
+        selectedPhotoIds: [],
+        photos: state.activeModelId === action.payload ? state.photos : []
+      }
+    case 'CLOSE_MODEL':
+      return {
+        ...state,
+        activeModelId: null,
+        activeCollectionId: null,
+        photos: [],
+        collections: [],
+        selectedPhotoIds: []
+      }
+    case 'SET_TAB':
+      return { ...state, activeTab: action.payload }
+    case 'SET_COLLECTION':
+      return {
+        ...state,
+        activeCollectionId: action.payload,
+        activeTab: 'photos',
+        selectedPhotoIds: []
+      }
     case 'SELECT_PHOTOS':
       return { ...state, selectedPhotoIds: action.payload }
     case 'TOGGLE_SELECT': {
@@ -103,36 +140,34 @@ function reducer(state: AppState, action: AppAction): AppState {
     }
     case 'CLEAR_SELECTION':
       return { ...state, selectedPhotoIds: [] }
-    case 'SET_FILTER':
-      return { ...state, activeFilter: action.payload, selectedPhotoIds: [] }
-    case 'SET_VIEW':
-      return { ...state, activeView: action.payload }
-    case 'SET_ACTIVE_NOTE':
-      return { ...state, activeNoteId: action.payload }
-    case 'SET_UPDATE_AVAILABLE':
-      return { ...state, updateInfo: action.payload }
-    case 'SET_UPDATE_DOWNLOADED':
-      return { ...state, updateInfo: action.payload, updateDownloaded: true }
+    case 'SET_UPDATE':
+      return { ...state, update: action.payload }
     case 'DISMISS_UPDATE':
-      return { ...state, updateInfo: null, updateDownloaded: false }
+      return { ...state, dismissedUpdateVersion: state.update?.availableVersion ?? null }
     case 'SET_LOADING':
       return { ...state, loading: action.payload }
-    case 'UPDATE_PHOTO':
+    case 'SET_READY':
+      return { ...state, ready: true }
+    case 'THUMBNAIL_PROGRESS': {
+      const { done, total, photoId, assets } = action.payload
+      const progress = done >= total ? null : { done, total }
+      if (photoId == null || !assets) return { ...state, thumbnailProgress: progress }
       return {
         ...state,
-        photos: state.photos.map((p) => (p.id === action.payload.id ? action.payload : p))
+        thumbnailProgress: progress,
+        photos: state.photos.map((p) =>
+          p.id === photoId
+            ? {
+                ...p,
+                thumbnailPath: assets.thumbnailPath,
+                convertedPath: assets.convertedPath,
+                width: assets.width,
+                height: assets.height
+              }
+            : p
+        )
       }
-    case 'REMOVE_PHOTO':
-      return { ...state, photos: state.photos.filter((p) => p.id !== action.payload) }
-    case 'ADD_NOTE':
-      return { ...state, notes: [action.payload, ...state.notes] }
-    case 'UPDATE_NOTE':
-      return {
-        ...state,
-        notes: state.notes.map((n) => (n.id === action.payload.id ? action.payload : n))
-      }
-    case 'REMOVE_NOTE':
-      return { ...state, notes: state.notes.filter((n) => n.id !== action.payload) }
+    }
     default:
       return state
   }
@@ -141,31 +176,46 @@ function reducer(state: AppState, action: AppAction): AppState {
 interface AppContextValue {
   state: AppState
   dispatch: Dispatch<AppAction>
+  activeModel: Model | null
   loadPhotos: () => Promise<void>
   loadCollections: () => Promise<void>
-  loadModels: () => Promise<void>
+  loadModels: () => Promise<Model[]>
   loadDestinations: () => Promise<void>
+  openModel: (id: number) => void
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }): JSX.Element {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const { activeModelId, activeCollectionId } = state
 
   const loadPhotos = useCallback(async () => {
+    if (activeModelId == null) {
+      dispatch({ type: 'SET_PHOTOS', payload: [] })
+      return
+    }
     dispatch({ type: 'SET_LOADING', payload: true })
-    const photos = await window.api.getPhotos(state.activeFilter)
+    const photos = await window.api.getPhotos({
+      modelId: activeModelId,
+      collectionId: activeCollectionId ?? undefined
+    })
     dispatch({ type: 'SET_PHOTOS', payload: photos })
-  }, [state.activeFilter])
+  }, [activeModelId, activeCollectionId])
 
   const loadCollections = useCallback(async () => {
-    const collections = await window.api.getCollections()
+    if (activeModelId == null) {
+      dispatch({ type: 'SET_COLLECTIONS', payload: [] })
+      return
+    }
+    const collections = await window.api.getCollections(activeModelId)
     dispatch({ type: 'SET_COLLECTIONS', payload: collections })
-  }, [])
+  }, [activeModelId])
 
   const loadModels = useCallback(async () => {
     const models = await window.api.getModels()
     dispatch({ type: 'SET_MODELS', payload: models })
+    return models
   }, [])
 
   const loadDestinations = useCallback(async () => {
@@ -173,33 +223,66 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     dispatch({ type: 'SET_DESTINATIONS', payload: destinations })
   }, [])
 
+  const openModel = useCallback((id: number) => {
+    dispatch({ type: 'OPEN_MODEL', payload: id })
+    // Recorded so the next launch reopens whatever was last worked on.
+    void window.api.touchModel(id).then(loadModels)
+  }, [loadModels])
+
+  // Landing behaviour: resume the most recently opened model, or fall through to the
+  // onboarding screen when the workspace has no models at all.
   useEffect(() => {
-    loadPhotos()
-    loadCollections()
-    loadModels()
-    loadDestinations()
+    void (async () => {
+      const [models] = await Promise.all([loadModels(), loadDestinations()])
+      const settings = await window.api.getSettings()
+      dispatch({ type: 'SET_WORKSPACE_NAME', payload: settings.workspaceName })
+
+      const mostRecent = [...models]
+        .filter((m) => m.status === 'active')
+        .sort((a, b) => (b.lastOpenedAt ?? b.createdAt).localeCompare(a.lastOpenedAt ?? a.createdAt))[0]
+
+      if (mostRecent) dispatch({ type: 'OPEN_MODEL', payload: mostRecent.id })
+      dispatch({ type: 'SET_READY' })
+    })()
   }, [])
 
   useEffect(() => {
-    loadPhotos()
-  }, [state.activeFilter])
+    void loadPhotos()
+  }, [loadPhotos])
 
   useEffect(() => {
-    const offAvail = window.api.onUpdateAvailable((info) =>
-      dispatch({ type: 'SET_UPDATE_AVAILABLE', payload: info })
+    void loadCollections()
+  }, [loadCollections])
+
+  useEffect(() => {
+    void window.api.getUpdateState().then((update) => dispatch({ type: 'SET_UPDATE', payload: update }))
+
+    const offUpdate = window.api.onUpdateState((update) =>
+      dispatch({ type: 'SET_UPDATE', payload: update })
     )
-    const offDl = window.api.onUpdateDownloaded((info) =>
-      dispatch({ type: 'SET_UPDATE_DOWNLOADED', payload: info })
+    const offThumbs = window.api.onThumbnailProgress((progress) =>
+      dispatch({ type: 'THUMBNAIL_PROGRESS', payload: progress })
     )
     return () => {
-      offAvail()
-      offDl()
+      offUpdate()
+      offThumbs()
     }
   }, [])
 
+  const activeModel = state.models.find((m) => m.id === state.activeModelId) ?? null
+
   return (
     <AppContext.Provider
-      value={{ state, dispatch, loadPhotos, loadCollections, loadModels, loadDestinations }}
+      value={{
+        state,
+        dispatch,
+        activeModel,
+        loadPhotos,
+        loadCollections,
+        loadModels,
+        loadDestinations,
+        openModel
+      }}
     >
       {children}
     </AppContext.Provider>

@@ -1,36 +1,30 @@
-import { useState } from 'react'
 import { useTheme } from '../../context/ThemeContext'
 import { useApp } from '../../context/AppContext'
 import Sidebar from '../Sidebar/Sidebar'
-import Gallery from '../Gallery/Gallery'
-import NotesEditor from '../Notes/NotesEditor'
+import ModelSpace from '../ModelSpace/ModelSpace'
+import Onboarding from '../Onboarding/Onboarding'
 import UpdateNotification from '../UpdateNotification/UpdateNotification'
+import VersionBadge from '../UpdateNotification/VersionBadge'
 import styles from './AppLayout.module.css'
 
 export default function AppLayout(): JSX.Element {
   const { resolved, toggle } = useTheme()
-  const { state, dispatch } = useApp()
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const { state, dispatch, activeModel } = useApp()
+
+  // No model open means there is nothing to work on - the funnel starts at a model.
+  const showOnboarding = state.ready && !activeModel
+
+  const update = state.update
+  const updateReady = update?.status === 'downloaded'
+  const dismissed =
+    update?.availableVersion != null && update.availableVersion === state.dismissedUpdateVersion
 
   return (
     <div className={styles.root} data-theme={resolved}>
-      {/* Titlebar area - electron handles the actual controls */}
       <div className={styles.titlebar}>
+        <VersionBadge />
         <div className={styles.titlebarDrag} />
         <div className={styles.titlebarActions}>
-          <button
-            className={styles.viewToggle}
-            onClick={() =>
-              dispatch({ type: 'SET_VIEW', payload: state.activeView === 'gallery' ? 'notes' : 'gallery' })
-            }
-            title={state.activeView === 'gallery' ? 'Switch to notes' : 'Switch to gallery'}
-          >
-            {state.activeView === 'gallery' ? (
-              <NoteIcon />
-            ) : (
-              <GalleryIcon />
-            )}
-          </button>
           <button className={styles.themeToggle} onClick={toggle} title="Toggle theme">
             {resolved === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>
@@ -38,28 +32,17 @@ export default function AppLayout(): JSX.Element {
       </div>
 
       <div className={styles.body}>
-        <Sidebar
-          open={sidebarOpen}
-          onToggle={() => setSidebarOpen((v) => !v)}
-        />
+        {state.models.length > 0 && <Sidebar />}
         <main className={styles.main}>
-          {state.activeView === 'gallery' ? (
-            <Gallery />
-          ) : (
-            <NotesEditor />
-          )}
+          {showOnboarding ? <Onboarding /> : <ModelSpace />}
         </main>
       </div>
 
-      {state.updateInfo && (
+      {update && !dismissed && (update.status === 'downloading' || updateReady) && (
         <UpdateNotification
-          info={state.updateInfo}
-          downloaded={state.updateDownloaded}
+          update={update}
           onDismiss={() => dispatch({ type: 'DISMISS_UPDATE' })}
-          onInstall={() => {
-            window.api.installUpdate()
-            dispatch({ type: 'DISMISS_UPDATE' })
-          }}
+          onInstall={() => window.api.installUpdate()}
         />
       )}
     </div>
@@ -68,7 +51,7 @@ export default function AppLayout(): JSX.Element {
 
 function SunIcon(): JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="5" />
       <line x1="12" y1="1" x2="12" y2="3" />
       <line x1="12" y1="21" x2="12" y2="23" />
@@ -84,31 +67,8 @@ function SunIcon(): JSX.Element {
 
 function MoonIcon(): JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-    </svg>
-  )
-}
-
-function NoteIcon(): JSX.Element {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-      <polyline points="10 9 9 9 8 9" />
-    </svg>
-  )
-}
-
-function GalleryIcon(): JSX.Element {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="7" height="7" />
-      <rect x="14" y="3" width="7" height="7" />
-      <rect x="14" y="14" width="7" height="7" />
-      <rect x="3" y="14" width="7" height="7" />
     </svg>
   )
 }

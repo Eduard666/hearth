@@ -1,13 +1,14 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import type { IpcApi, PhotoFilter, UpdateInfo } from '../shared/types'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { IpcApi, PhotoFilter, ThumbnailProgress, UpdateState } from '../shared/types'
 
 const api: IpcApi = {
   // photos
-  importPhotos: (paths) => ipcRenderer.invoke('photos:import', paths),
+  importPhotos: (paths, modelId) => ipcRenderer.invoke('photos:import', paths, modelId),
   getPhotos: (filter?: PhotoFilter) => ipcRenderer.invoke('photos:get', filter),
   getPhoto: (id) => ipcRenderer.invoke('photos:getOne', id),
   deletePhoto: (id) => ipcRenderer.invoke('photos:delete', id),
-  convertHeic: (photoId, format) => ipcRenderer.invoke('photos:convertHeic', photoId, format),
+  convertHeic: (photoId) => ipcRenderer.invoke('photos:convertHeic', photoId),
+  rebuildThumbnails: () => ipcRenderer.invoke('photos:rebuildThumbnails'),
 
   // tags
   addTag: (photoIds, tag) => ipcRenderer.invoke('tags:add', photoIds, tag),
@@ -22,9 +23,9 @@ const api: IpcApi = {
   deleteDestination: (id) => ipcRenderer.invoke('platform:deleteDestination', id),
 
   // collections
-  getCollections: () => ipcRenderer.invoke('collections:get'),
-  createCollection: (name, description) =>
-    ipcRenderer.invoke('collections:create', name, description),
+  getCollections: (modelId) => ipcRenderer.invoke('collections:get', modelId),
+  createCollection: (modelId, name, description) =>
+    ipcRenderer.invoke('collections:create', modelId, name, description),
   updateCollection: (id, name, description) =>
     ipcRenderer.invoke('collections:update', id, name, description),
   deleteCollection: (id) => ipcRenderer.invoke('collections:delete', id),
@@ -37,11 +38,11 @@ const api: IpcApi = {
   getModels: () => ipcRenderer.invoke('models:get'),
   createModel: (name, description) => ipcRenderer.invoke('models:create', name, description),
   updateModel: (id, name, description) => ipcRenderer.invoke('models:update', id, name, description),
+  setModelStatus: (id, status) => ipcRenderer.invoke('models:setStatus', id, status),
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
-  addPhotosToModel: (photoIds, modelId) =>
-    ipcRenderer.invoke('models:addPhotos', photoIds, modelId),
-  removePhotosFromModel: (photoIds, modelId) =>
-    ipcRenderer.invoke('models:removePhotos', photoIds, modelId),
+  touchModel: (id) => ipcRenderer.invoke('models:touch', id),
+  movePhotosToModel: (photoIds, modelId) =>
+    ipcRenderer.invoke('models:movePhotos', photoIds, modelId),
 
   // notes
   getNotes: (filter) => ipcRenderer.invoke('notes:get', filter),
@@ -57,21 +58,28 @@ const api: IpcApi = {
   // file system
   pickFiles: () => ipcRenderer.invoke('fs:pickFiles'),
   pickFolder: () => ipcRenderer.invoke('fs:pickFolder'),
-  getFileTree: (rootPath) => ipcRenderer.invoke('fs:getFileTree', rootPath),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
+
+  // thumbnails
+  onThumbnailProgress: (cb: (progress: ThumbnailProgress) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, progress: ThumbnailProgress): void =>
+      cb(progress)
+    ipcRenderer.on('thumbnails:progress', handler)
+    return () => ipcRenderer.removeListener('thumbnails:progress', handler)
+  },
+
+  // window chrome
+  setTitleBarTheme: (theme) => ipcRenderer.send('window:setTitleBarTheme', theme),
 
   // updater
-  onUpdateAvailable: (cb: (info: UpdateInfo) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, info: UpdateInfo): void => cb(info)
-    ipcRenderer.on('update-available', handler)
-    return () => ipcRenderer.removeListener('update-available', handler)
+  getUpdateState: () => ipcRenderer.invoke('update:getState'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  onUpdateState: (cb: (state: UpdateState) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, state: UpdateState): void => cb(state)
+    ipcRenderer.on('update:state', handler)
+    return () => ipcRenderer.removeListener('update:state', handler)
   },
-  onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, info: UpdateInfo): void => cb(info)
-    ipcRenderer.on('update-downloaded', handler)
-    return () => ipcRenderer.removeListener('update-downloaded', handler)
-  },
-  installUpdate: () => ipcRenderer.send('install-update'),
-  dismissUpdate: () => {}
+  installUpdate: () => ipcRenderer.send('install-update')
 }
 
 contextBridge.exposeInMainWorld('api', api)

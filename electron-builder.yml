@@ -22,6 +22,9 @@ publish:
   provider: github
   owner: Eduard666
   repo: hearth
+  # electron-builder defaults to a draft release, which electron-updater cannot see -
+  # the app would never find an update. Publish live instead.
+  releaseType: release
 
 win:
   target:
@@ -39,6 +42,8 @@ nsis:
   shortcutName: Hearth
 
 asar: true
+
+npmRebuild: false
 
 extraResources:
   - from: resources/

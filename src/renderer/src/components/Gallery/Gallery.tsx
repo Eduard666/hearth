@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -11,15 +11,43 @@ import {
 import { useApp } from '../../context/AppContext'
 import PhotoCard from './PhotoCard'
 import GalleryToolbar from './GalleryToolbar'
+import CollectionChips from './CollectionChips'
 import DuplicateModal from './DuplicateModal'
-import type { Photo, ImportResult } from '../../../../shared/types'
+import { useVirtualGrid } from './useVirtualGrid'
+import type { ImportResult } from '../../../../shared/types'
 import styles from './Gallery.module.css'
 
-export default function Gallery(): JSX.Element {
-  const { state, dispatch, loadPhotos, loadCollections } = useApp()
+// Kept in sync with Gallery.module.css / PhotoCard.module.css: the virtualizer needs
+// concrete numbers to derive row height from the measured column width.
+const GRID_GAP = 12
+const GRID_PADDING = 16
+const MIN_COLUMN_WIDTH = 180
+const CARD_META_HEIGHT = 62
+
+interface GalleryProps {
+  /** Opens the model-scoped import picker from the empty state. */
+  onImport: () => void
+}
+
+export default function Gallery({ onImport }: GalleryProps): JSX.Element {
+  const { state, dispatch, activeModel, loadPhotos, loadCollections, loadModels } = useApp()
   const [activeId, setActiveId] = useState<number | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const lastClickedId = useRef<number | null>(null)
+
+  const grid = useVirtualGrid(scroller, {
+    itemCount: state.photos.length,
+    minColumnWidth: MIN_COLUMN_WIDTH,
+    gap: GRID_GAP,
+    padding: GRID_PADDING,
+    metaHeight: CARD_META_HEIGHT
+  })
+
+  // A new filter is a new list; keeping the old scroll offset would land mid-nowhere.
+  useEffect(() => {
+    scroller?.scrollTo({ top: 0 })
+  }, [state.activeModelId, state.activeCollectionId, scroller])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -67,14 +95,18 @@ export default function Gallery(): JSX.Element {
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault()
-      const paths = Array.from(e.dataTransfer.files).map((f) => f.path)
+      if (!activeModel) return
+
+      // Electron 32+ removed `File.path`; paths must come from webUtils via the preload.
+      const paths = Array.from(e.dataTransfer.files).map((f) => window.api.getPathForFile(f))
       if (paths.length === 0) return
 
-      const result = await window.api.importPhotos(paths)
+      // Dropped files land in the open model, never in a shared pool.
+      const result = await window.api.importPhotos(paths, activeModel.id)
       setImportResult(result)
-      loadPhotos()
+      await Promise.all([loadPhotos(), loadModels()])
     },
-    [loadPhotos]
+    [activeModel, loadPhotos, loadModels]
   )
 
   const handleDragOver = (e: React.DragEvent): void => {
@@ -83,11 +115,28 @@ export default function Gallery(): JSX.Element {
   }
 
   const activePhoto = activeId ? state.photos.find((p) => p.id === activeId) : null
+  const visiblePhotos = state.photos.slice(grid.startIndex, grid.endIndex)
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className={styles.wrapper}>
         <GalleryToolbar />
+        <CollectionChips />
+
+        {state.thumbnailProgress && (
+          <div className={styles.progressBar}>
+            <div
+              className={styles.progressFill}
+              style={{
+                width: `${(state.thumbnailProgress.done / state.thumbnailProgress.total) * 100}%`
+              }}
+            />
+            <span className={styles.progressLabel}>
+              Preparing previews {state.thumbnailProgress.done} of {state.thumbnailProgress.total}
+            </span>
+          </div>
+        )}
+
         {state.photos.length === 0 ? (
           <div
             className={styles.emptyState}
@@ -97,28 +146,55 @@ export default function Gallery(): JSX.Element {
             <div className={styles.emptyIcon}>
               <DropIcon />
             </div>
-            <p className={styles.emptyTitle}>Drop photos here to import</p>
-            <p className={styles.emptySubtitle}>Or use the import buttons in the sidebar</p>
+            <p className={styles.emptyTitle}>
+              {state.activeCollectionId != null
+                ? 'Nothing in this collection yet'
+                : `Drop photos here to add them to ${activeModel?.name ?? 'this model'}`}
+            </p>
+            <p className={styles.emptySubtitle}>
+              {state.activeCollectionId != null
+                ? 'Drag photos onto the collection chip above to fill it.'
+                : 'Everything you import here belongs to this model only.'}
+            </p>
+            {state.activeCollectionId == null && (
+              <button className={styles.emptyAction} onClick={onImport}>
+                Choose photos
+              </button>
+            )}
           </div>
         ) : (
           <div
-            className={styles.grid}
+            ref={setScroller}
+            className={styles.scroller}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onClick={(e) => {
               if (e.target === e.currentTarget) dispatch({ type: 'CLEAR_SELECTION' })
             }}
           >
-            {state.photos.map((photo) => (
-              <PhotoCard
-                key={photo.id}
-                photo={photo}
-                selected={state.selectedPhotoIds.includes(photo.id)}
-                onClick={(e) => handleCardClick(photo.id, e)}
-                destinations={state.destinations}
-                onRefresh={loadPhotos}
-              />
-            ))}
+            <div
+              className={styles.sizer}
+              style={{ height: grid.totalHeight + GRID_PADDING * 2 }}
+            >
+              <div
+                className={styles.grid}
+                style={{
+                  top: GRID_PADDING + grid.offsetY,
+                  gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))`
+                }}
+              >
+                {visiblePhotos.map((photo) => (
+                  <PhotoCard
+                    key={photo.id}
+                    photo={photo}
+                    selected={state.selectedPhotoIds.includes(photo.id)}
+                    onClick={(e) => handleCardClick(photo.id, e)}
+                    destinations={state.destinations}
+                    onRefresh={loadPhotos}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

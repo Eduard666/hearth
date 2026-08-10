@@ -13,10 +13,10 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  background: var(--titlebar-bg);
+  background: var(--sidebar-bg);
   border-bottom: 1px solid var(--border-subtle);
   -webkit-app-region: drag;
-  padding-right: 140px; /* leave room for native window controls */
+  padding-right: 140px;
 }
 
 .titlebarDrag {
@@ -28,25 +28,23 @@
   align-items: center;
   gap: var(--space-1);
   -webkit-app-region: no-drag;
-  padding-right: var(--space-3);
+  padding-right: var(--space-2);
 }
 
-.themeToggle,
-.viewToggle {
+.themeToggle {
   width: 28px;
   height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.themeToggle:hover,
-.viewToggle:hover {
+.themeToggle:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .body {

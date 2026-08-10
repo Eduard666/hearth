@@ -6,14 +6,53 @@
   overflow: hidden;
 }
 
-.grid {
+.scroller {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Holds the full scroll height for every photo, while only visible rows are mounted. */
+.sizer {
+  position: relative;
+  width: 100%;
+}
+
+.grid {
+  position: absolute;
+  left: var(--space-4);
+  right: var(--space-4);
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: var(--space-3);
-  padding: var(--space-4);
   align-content: start;
+}
+
+.progressBar {
+  position: relative;
+  height: 22px;
+  flex: none;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-subtle, var(--border-default));
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  opacity: 0.18;
+  transition: width var(--transition-base);
+}
+
+.progressLabel {
+  position: relative;
+  padding: 0 var(--space-4);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .emptyState {
@@ -46,6 +85,22 @@
 
 .emptySubtitle {
   font-size: 13px;
+}
+
+.emptyAction {
+  margin-top: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-4);
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--transition-fast);
+}
+
+.emptyAction:hover {
+  background: var(--accent-hover);
 }
 
 .dragOverlay {

@@ -34,6 +34,9 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', resolved)
+    // The native minimize/maximize/close buttons are painted by the OS, not the page, so
+    // the main process has to repaint the title bar overlay whenever the theme changes.
+    window.api.setTitleBarTheme(resolved)
   }, [resolved])
 
   const setMode = (next: ThemeMode): void => {

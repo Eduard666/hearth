@@ -1,26 +1,25 @@
-import { copyFileSync, mkdirSync, statSync, readdirSync } from 'fs'
-import { join, extname, basename, dirname } from 'path'
+import { copyFileSync, existsSync, mkdirSync, statSync, readdirSync } from 'fs'
+import { join, extname, basename } from 'path'
 import { app } from 'electron'
 import { getDb } from './db'
 import { computeSha256, computePerceptualHash, hammingDistance } from './hash'
-import { isHeicFile, convertHeicToJpeg, generateThumbnail } from './heic'
-import type { ImportResult, Photo, DuplicateInfo, NearDuplicateInfo } from '../shared/types'
-import Jimp from 'jimp'
+import { isHeicFile } from './heic'
+import { backfillThumbnails } from './thumbnails'
+import type { ImportResult, Photo } from '../shared/types'
 
 const IMAGE_EXTS = new Set([
   '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif',
   '.heic', '.heif', '.hif'
 ])
 
-export async function importPhotos(
-  paths: string[],
-  options?: { autoConvertHeic?: boolean; heicOutputFormat?: 'jpeg' | 'png' }
-): Promise<ImportResult> {
+export async function importPhotos(paths: string[], modelId: number): Promise<ImportResult> {
   const db = getDb()
+
+  const model = db.prepare('SELECT id FROM models WHERE id = ?').get(modelId)
+  if (!model) throw new Error(`Cannot import: model ${modelId} does not exist`)
+
   const settings = getSettings()
   const importMode = settings.importMode as 'copy' | 'reference'
-  const autoConvert = options?.autoConvertHeic ?? settings.autoConvertHeic === 'true'
-  const heicFormat = (options?.heicOutputFormat ?? settings.heicOutputFormat) as 'jpeg' | 'png'
   const threshold = parseInt(settings.nearDuplicateThreshold, 10)
 
   const allFiles = collectImageFiles(paths)
@@ -32,9 +31,13 @@ export async function importPhotos(
     heicFiles: []
   }
 
+  // Duplicate detection is per model: the same file may legitimately appear in two
+  // models' spaces, and an agency only cares about repeats within one model's set.
   const existingRows = db.prepare(
-    'SELECT id, file_path, sha256, perceptual_hash, width, height, file_size, import_date, original_ext, converted_path, thumbnail_path FROM photos'
-  ).all() as RawPhotoRow[]
+    `SELECT id, model_id, file_path, sha256, perceptual_hash, width, height, file_size,
+            import_date, original_ext, converted_path, thumbnail_path
+     FROM photos WHERE model_id = ?`
+  ).all(modelId) as RawPhotoRow[]
 
   for (const filePath of allFiles) {
     const ext = extname(filePath).toLowerCase()
@@ -52,15 +55,9 @@ export async function importPhotos(
         continue
       }
 
-      let processedPath = filePath
-      let convertedPath: string | null = null
-
-      if (heic && autoConvert) {
-        convertedPath = await convertHeicToJpeg(filePath, heicFormat)
-        processedPath = convertedPath
-      }
-
-      const phash = await computePerceptualHash(processedPath !== filePath ? processedPath : filePath)
+      // HEIC cannot be hashed until it is decoded; the background pass fills in a real
+      // hash once it has produced a JPEG thumbnail.
+      const phash = await computePerceptualHash(filePath)
 
       const nearDup = existingRows.find((r) => {
         if (!r.perceptual_hash || r.perceptual_hash === '0'.repeat(64)) return false
@@ -77,49 +74,32 @@ export async function importPhotos(
 
       let storedPath = filePath
       if (importMode === 'copy') {
-        const copyDir = join(app.getPath('userData'), 'library')
-        mkdirSync(copyDir, { recursive: true })
-        const destPath = join(copyDir, basename(filePath))
-        copyFileSync(filePath, destPath)
-        storedPath = destPath
+        storedPath = copyIntoLibrary(filePath, modelId)
       }
 
       const stat = statSync(filePath)
-      let width = 0
-      let height = 0
-      let thumbPath: string | null = null
-
-      try {
-        const imgSrc = convertedPath ?? (heic ? filePath : filePath)
-        if (!heic || convertedPath) {
-          const src = convertedPath ?? filePath
-          const img = await Jimp.read(src)
-          width = img.bitmap.width
-          height = img.bitmap.height
-          thumbPath = await generateThumbnail(src)
-        }
-      } catch {
-        // dimensions unavailable - ok
-      }
-
       const now = new Date().toISOString()
+
+      // Dimensions and thumbnails are left to the background pass: decoding here would
+      // make importing a folder of HEICs take minutes before anything appears on screen.
       const row = db.prepare(`
-        INSERT INTO photos (file_path, sha256, perceptual_hash, width, height, file_size, import_date, original_ext, converted_path, thumbnail_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(storedPath, sha256, phash, width, height, stat.size, now, ext, convertedPath, thumbPath)
+        INSERT INTO photos (model_id, file_path, sha256, perceptual_hash, width, height, file_size, import_date, original_ext, converted_path, thumbnail_path)
+        VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, NULL, NULL)
+      `).run(modelId, storedPath, sha256, phash, stat.size, now, ext)
 
       existingRows.push({
         id: row.lastInsertRowid as number,
+        model_id: modelId,
         file_path: storedPath,
         sha256,
         perceptual_hash: phash,
-        width,
-        height,
+        width: 0,
+        height: 0,
         file_size: stat.size,
         import_date: now,
         original_ext: ext,
-        converted_path: convertedPath,
-        thumbnail_path: thumbPath
+        converted_path: null,
+        thumbnail_path: null
       })
 
       result.imported++
@@ -129,7 +109,32 @@ export async function importPhotos(
     }
   }
 
+  if (result.imported > 0) void backfillThumbnails()
+
   return result
+}
+
+/**
+ * Copies into a per-model folder so two models can hold files with the same name, and
+ * suffixes on collision so an import never silently overwrites an earlier photo.
+ */
+function copyIntoLibrary(filePath: string, modelId: number): string {
+  const copyDir = join(app.getPath('userData'), 'library', `model-${modelId}`)
+  mkdirSync(copyDir, { recursive: true })
+
+  const name = basename(filePath)
+  const ext = extname(name)
+  const stem = name.slice(0, name.length - ext.length)
+
+  let destPath = join(copyDir, name)
+  let suffix = 1
+  while (existsSync(destPath)) {
+    destPath = join(copyDir, `${stem}_${suffix}${ext}`)
+    suffix++
+  }
+
+  copyFileSync(filePath, destPath)
+  return destPath
 }
 
 function collectImageFiles(paths: string[]): string[] {
@@ -167,6 +172,7 @@ function collectFromDir(dir: string, out: string[]): void {
 
 interface RawPhotoRow {
   id: number
+  model_id: number
   file_path: string
   sha256: string
   perceptual_hash: string
@@ -182,6 +188,7 @@ interface RawPhotoRow {
 function rowToPhoto(row: RawPhotoRow): Photo {
   return {
     id: row.id,
+    modelId: row.model_id,
     filePath: row.file_path,
     sha256: row.sha256,
     perceptualHash: row.perceptual_hash,
@@ -194,7 +201,6 @@ function rowToPhoto(row: RawPhotoRow): Photo {
     thumbnailPath: row.thumbnail_path,
     tags: [],
     collectionIds: [],
-    modelIds: [],
     platformStatuses: []
   }
 }

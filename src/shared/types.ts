@@ -1,5 +1,7 @@
 export interface Photo {
   id: number
+  /** A photo belongs to exactly one model - there is no library-wide photo pool. */
+  modelId: number
   filePath: string
   sha256: string
   perceptualHash: string
@@ -9,7 +11,6 @@ export interface Photo {
   importDate: string
   tags: string[]
   collectionIds: number[]
-  modelIds: number[]
   platformStatuses: PlatformStatus[]
   thumbnailPath: string | null
   originalExt: string
@@ -32,17 +33,23 @@ export interface PlatformDestination {
 
 export interface Collection {
   id: number
+  /** Collections group photos inside one model's space, never across models. */
+  modelId: number
   name: string
   description: string | null
   createdAt: string
   photoCount: number
 }
 
+export type ModelStatus = 'active' | 'archived'
+
 export interface Model {
   id: number
   name: string
   description: string | null
   createdAt: string
+  lastOpenedAt: string | null
+  status: ModelStatus
   photoCount: number
 }
 
@@ -62,6 +69,7 @@ export interface AppSettings {
   heicOutputFormat: 'jpeg' | 'png'
   theme: 'light' | 'dark' | 'system'
   nearDuplicateThreshold: number
+  workspaceName: string
 }
 
 export interface ImportResult {
@@ -83,26 +91,52 @@ export interface NearDuplicateInfo {
   distance: number
 }
 
-export interface FileTreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children: FileTreeNode[]
-  photoCount?: number
-}
-
 export interface UpdateInfo {
   version: string
   releaseNotes: string
 }
 
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export interface UpdateState {
+  status: UpdateStatus
+  /** Version of the running app, shown in the title bar. */
+  currentVersion: string
+  availableVersion?: string
+  releaseNotes?: string
+  percent?: number
+  error?: string
+}
+
+/** Derived files Hearth generates so a photo can actually be displayed. */
+export interface PhotoAssets {
+  thumbnailPath: string
+  convertedPath: string | null
+  width: number
+  height: number
+}
+
+export interface ThumbnailProgress {
+  done: number
+  total: number
+  photoId?: number
+  assets?: PhotoAssets
+}
+
 export type IpcApi = {
-  // photos
-  importPhotos: (paths: string[]) => Promise<ImportResult>
+  // photos - always scoped to a model
+  importPhotos: (paths: string[], modelId: number) => Promise<ImportResult>
   getPhotos: (filter?: PhotoFilter) => Promise<Photo[]>
   getPhoto: (id: number) => Promise<Photo | null>
   deletePhoto: (id: number) => Promise<void>
-  convertHeic: (photoId: number, format: 'jpeg' | 'png') => Promise<Photo>
+  convertHeic: (photoId: number) => Promise<Photo>
+  rebuildThumbnails: () => Promise<void>
 
   // tags
   addTag: (photoIds: number[], tag: string) => Promise<void>
@@ -115,9 +149,9 @@ export type IpcApi = {
   addDestination: (name: string, color: string) => Promise<PlatformDestination>
   deleteDestination: (id: number) => Promise<void>
 
-  // collections
-  getCollections: () => Promise<Collection[]>
-  createCollection: (name: string, description?: string) => Promise<Collection>
+  // collections - scoped to one model
+  getCollections: (modelId?: number) => Promise<Collection[]>
+  createCollection: (modelId: number, name: string, description?: string) => Promise<Collection>
   updateCollection: (id: number, name: string, description?: string) => Promise<void>
   deleteCollection: (id: number) => Promise<void>
   addPhotosToCollection: (photoIds: number[], collectionId: number) => Promise<void>
@@ -127,9 +161,11 @@ export type IpcApi = {
   getModels: () => Promise<Model[]>
   createModel: (name: string, description?: string) => Promise<Model>
   updateModel: (id: number, name: string, description?: string) => Promise<void>
+  setModelStatus: (id: number, status: ModelStatus) => Promise<void>
   deleteModel: (id: number) => Promise<void>
-  addPhotosToModel: (photoIds: number[], modelId: number) => Promise<void>
-  removePhotosFromModel: (photoIds: number[], modelId: number) => Promise<void>
+  touchModel: (id: number) => Promise<void>
+  /** Reassigns photos to a different model - the fix for a mis-targeted import. */
+  movePhotosToModel: (photoIds: number[], modelId: number) => Promise<void>
 
   // notes
   getNotes: (filter?: { collectionId?: number; modelId?: number }) => Promise<Note[]>
@@ -145,19 +181,26 @@ export type IpcApi = {
   // file system
   pickFiles: () => Promise<string[]>
   pickFolder: () => Promise<string | null>
-  getFileTree: (rootPath?: string) => Promise<FileTreeNode[]>
+  /** Electron 32+ removed `File.path`; drag-and-drop must resolve paths through webUtils. */
+  getPathForFile: (file: File) => string
+
+  // thumbnails
+  onThumbnailProgress: (cb: (progress: ThumbnailProgress) => void) => () => void
+
+  // window chrome
+  setTitleBarTheme: (theme: 'light' | 'dark') => void
 
   // updater
-  onUpdateAvailable: (cb: (info: UpdateInfo) => void) => () => void
-  onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => () => void
+  getUpdateState: () => Promise<UpdateState>
+  checkForUpdates: () => Promise<UpdateState>
+  onUpdateState: (cb: (state: UpdateState) => void) => () => void
   installUpdate: () => void
-  dismissUpdate: () => void
 }
 
 export interface PhotoFilter {
-  collectionId?: number
+  /** Required in practice - photos are only reachable through their model. */
   modelId?: number
+  collectionId?: number
   tags?: string[]
-  folderPath?: string
   search?: string
 }

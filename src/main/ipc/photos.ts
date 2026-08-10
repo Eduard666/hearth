@@ -1,11 +1,12 @@
 import { ipcMain } from 'electron'
 import { getDb } from '../db'
 import { importPhotos } from '../import'
-import { convertHeicToJpeg, generateThumbnail } from '../heic'
+import { backfillThumbnails, buildPhotoAssets, persistPhotoAssets } from '../thumbnails'
 import type { Photo, PlatformStatus, PhotoFilter } from '../../shared/types'
 
 interface RawPhotoRow {
   id: number
+  model_id: number
   file_path: string
   sha256: string
   perceptual_hash: string
@@ -31,12 +32,6 @@ function rowToPhoto(row: RawPhotoRow): Photo {
       .all(row.id) as { collection_id: number }[]
   ).map((c) => c.collection_id)
 
-  const modelIds = (
-    db
-      .prepare('SELECT model_id FROM model_photos WHERE photo_id = ?')
-      .all(row.id) as { model_id: number }[]
-  ).map((m) => m.model_id)
-
   const platformStatuses: PlatformStatus[] = (
     db.prepare(`
       SELECT ps.destination_id, pd.name as destination_name, ps.posted, ps.posted_at
@@ -58,6 +53,7 @@ function rowToPhoto(row: RawPhotoRow): Photo {
 
   return {
     id: row.id,
+    modelId: row.model_id,
     filePath: row.file_path,
     sha256: row.sha256,
     perceptualHash: row.perceptual_hash,
@@ -70,7 +66,6 @@ function rowToPhoto(row: RawPhotoRow): Photo {
     thumbnailPath: row.thumbnail_path,
     tags,
     collectionIds,
-    modelIds,
     platformStatuses
   }
 }
@@ -78,25 +73,20 @@ function rowToPhoto(row: RawPhotoRow): Photo {
 export function registerPhotoHandlers(): void {
   const db = getDb()
 
-  ipcMain.handle('photos:import', async (_e, paths: string[]) => {
-    return importPhotos(paths)
+  ipcMain.handle('photos:import', async (_e, paths: string[], modelId: number) => {
+    return importPhotos(paths, modelId)
   })
 
   ipcMain.handle('photos:get', async (_e, filter?: PhotoFilter) => {
-    let sql = 'SELECT * FROM photos WHERE 1=1'
-    const params: (string | number)[] = []
+    // Photos are only ever reachable through a model; there is no global library view.
+    if (filter?.modelId == null) return []
 
-    if (filter?.folderPath) {
-      sql += ' AND file_path LIKE ?'
-      params.push(`${filter.folderPath}%`)
-    }
-    if (filter?.collectionId != null) {
+    let sql = 'SELECT * FROM photos WHERE model_id = ?'
+    const params: (string | number)[] = [filter.modelId]
+
+    if (filter.collectionId != null) {
       sql += ' AND id IN (SELECT photo_id FROM collection_photos WHERE collection_id = ?)'
       params.push(filter.collectionId)
-    }
-    if (filter?.modelId != null) {
-      sql += ' AND id IN (SELECT photo_id FROM model_photos WHERE model_id = ?)'
-      params.push(filter.modelId)
     }
     if (filter?.tags && filter.tags.length > 0) {
       const placeholders = filter.tags.map(() => '?').join(',')
@@ -119,21 +109,20 @@ export function registerPhotoHandlers(): void {
     db.prepare('DELETE FROM photos WHERE id = ?').run(id)
   })
 
-  ipcMain.handle('photos:convertHeic', async (_e, photoId: number, format: 'jpeg' | 'png') => {
+  ipcMain.handle('photos:convertHeic', async (_e, photoId: number) => {
     const row = db.prepare('SELECT * FROM photos WHERE id = ?').get(photoId) as RawPhotoRow | undefined
     if (!row) throw new Error('Photo not found')
 
-    const convertedPath = await convertHeicToJpeg(row.file_path, format)
-    const thumbPath = await generateThumbnail(convertedPath)
-
-    db.prepare('UPDATE photos SET converted_path = ?, thumbnail_path = ? WHERE id = ?').run(
-      convertedPath,
-      thumbPath,
-      photoId
-    )
+    const assets = await buildPhotoAssets(row)
+    if (!assets) throw new Error(`Could not decode ${row.file_path}`)
+    persistPhotoAssets(photoId, assets)
 
     const updated = db.prepare('SELECT * FROM photos WHERE id = ?').get(photoId) as RawPhotoRow
     return rowToPhoto(updated)
+  })
+
+  ipcMain.handle('photos:rebuildThumbnails', async () => {
+    void backfillThumbnails()
   })
 
   // tags

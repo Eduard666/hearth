@@ -7,8 +7,6 @@ interface DuplicateModalProps {
 }
 
 export default function DuplicateModal({ result, onClose }: DuplicateModalProps): JSX.Element {
-  const total = result.duplicates.length + result.nearDuplicates.length + result.heicFiles.length
-
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -49,8 +47,9 @@ export default function DuplicateModal({ result, onClose }: DuplicateModalProps)
           <div className={styles.section}>
             <h3 className={styles.sectionTitle}>HEIC files detected</h3>
             <p className={styles.hint}>
-              {result.heicFiles.length} HEIC file{result.heicFiles.length !== 1 ? 's' : ''} were imported.
-              Click "Convert" on any card to convert to JPEG, or enable auto-convert in settings.
+              {result.heicFiles.length} HEIC file{result.heicFiles.length !== 1 ? 's' : ''} were
+              imported. They are being decoded in the background and will appear in the grid as
+              each one finishes.
             </p>
           </div>
         )}

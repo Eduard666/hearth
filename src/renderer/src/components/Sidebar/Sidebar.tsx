@@ -1,271 +1,167 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '../../context/AppContext'
-import type { FileTreeNode, Collection, Model } from '../../../../shared/types'
-import CollectionList from './CollectionList'
 import ModelList from './ModelList'
-import FileTree from './FileTree'
 import styles from './Sidebar.module.css'
 
-interface SidebarProps {
-  open: boolean
-  onToggle: () => void
-}
-
-type SidebarSection = 'library' | 'collections' | 'models'
-
-export default function Sidebar({ open, onToggle }: SidebarProps): JSX.Element {
-  const { state, dispatch, loadPhotos, loadCollections, loadModels } = useApp()
-  const [fileTree, setFileTree] = useState<FileTreeNode[]>([])
-  const [expandedSections, setExpandedSections] = useState<Set<SidebarSection>>(
-    new Set(['library', 'collections', 'models'])
-  )
-  const [newCollectionName, setNewCollectionName] = useState('')
-  const [creatingCollection, setCreatingCollection] = useState(false)
+export default function Sidebar(): JSX.Element {
+  const { state, dispatch, loadModels, openModel } = useApp()
   const [newModelName, setNewModelName] = useState('')
   const [creatingModel, setCreatingModel] = useState(false)
+  const [search, setSearch] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+  const [editingWorkspace, setEditingWorkspace] = useState(false)
 
-  useEffect(() => {
-    window.api.getFileTree().then(setFileTree)
-  }, [])
-
-  const toggleSection = (section: SidebarSection): void => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev)
-      if (next.has(section)) next.delete(section)
-      else next.add(section)
-      return next
+  const visibleModels = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return state.models.filter((m) => {
+      if (m.status === 'archived' && !showArchived) return false
+      return query === '' || m.name.toLowerCase().includes(query)
     })
-  }
+  }, [state.models, search, showArchived])
 
-  const handleFolderSelect = (path: string): void => {
-    dispatch({ type: 'SET_FILTER', payload: { ...state.activeFilter, folderPath: path, collectionId: undefined, modelId: undefined } })
-  }
-
-  const handleLibrarySelect = (): void => {
-    dispatch({ type: 'SET_FILTER', payload: {} })
-  }
-
-  const handleCollectionSelect = (id: number): void => {
-    dispatch({ type: 'SET_FILTER', payload: { collectionId: id, folderPath: undefined, modelId: undefined } })
-    dispatch({ type: 'SET_VIEW', payload: 'gallery' })
-  }
-
-  const handleModelSelect = (id: number): void => {
-    dispatch({ type: 'SET_FILTER', payload: { modelId: id, folderPath: undefined, collectionId: undefined } })
-    dispatch({ type: 'SET_VIEW', payload: 'gallery' })
-  }
-
-  const createCollection = async (): Promise<void> => {
-    if (!newCollectionName.trim()) return
-    await window.api.createCollection(newCollectionName.trim())
-    setNewCollectionName('')
-    setCreatingCollection(false)
-    loadCollections()
-  }
+  const archivedCount = state.models.filter((m) => m.status === 'archived').length
 
   const createModel = async (): Promise<void> => {
-    if (!newModelName.trim()) return
-    await window.api.createModel(newModelName.trim())
+    const name = newModelName.trim()
+    if (!name) return
+    const model = await window.api.createModel(name)
     setNewModelName('')
     setCreatingModel(false)
-    loadModels()
+    await loadModels()
+    openModel(model.id)
   }
 
-  const handleImportFiles = async (): Promise<void> => {
-    const paths = await window.api.pickFiles()
-    if (paths.length === 0) return
-    await window.api.importPhotos(paths)
-    loadPhotos()
-  }
-
-  const handleImportFolder = async (): Promise<void> => {
-    const folder = await window.api.pickFolder()
-    if (!folder) return
-    await window.api.importPhotos([folder])
-    window.api.getFileTree().then(setFileTree)
-    loadPhotos()
-  }
-
-  if (!open) {
-    return (
-      <aside className={styles.collapsed}>
-        <button className={styles.toggleBtn} onClick={onToggle} title="Open sidebar">
-          <ChevronRightIcon />
-        </button>
-      </aside>
-    )
+  const saveWorkspaceName = async (name: string): Promise<void> => {
+    const trimmed = name.trim() || 'My agency'
+    dispatch({ type: 'SET_WORKSPACE_NAME', payload: trimmed })
+    setEditingWorkspace(false)
+    await window.api.updateSettings({ workspaceName: trimmed })
   }
 
   return (
     <aside className={styles.sidebar}>
-      <div className={styles.header}>
-        <span className={styles.appName}>Hearth</span>
-        <button className={styles.toggleBtn} onClick={onToggle} title="Close sidebar">
-          <ChevronLeftIcon />
-        </button>
+      {/* Workspace identity */}
+      <div className={styles.brand}>
+        <HearthLogo />
+        {editingWorkspace ? (
+          <input
+            autoFocus
+            className={styles.workspaceInput}
+            defaultValue={state.workspaceName}
+            onBlur={(e) => saveWorkspaceName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveWorkspaceName(e.currentTarget.value)
+              if (e.key === 'Escape') setEditingWorkspace(false)
+            }}
+          />
+        ) : (
+          <button
+            className={styles.brandName}
+            onClick={() => setEditingWorkspace(true)}
+            title="Rename workspace"
+          >
+            {state.workspaceName}
+          </button>
+        )}
       </div>
 
-      {/* Import actions */}
-      <div className={styles.importActions}>
-        <button className={styles.importBtn} onClick={handleImportFiles}>
-          <PlusIcon /> Import files
-        </button>
-        <button className={styles.importBtnSecondary} onClick={handleImportFolder}>
-          <FolderIcon /> Import folder
-        </button>
+      {/* Models are the only entry point into the app */}
+      <div className={styles.listSection}>
+        <div className={styles.sectionHead}>
+          <span className={styles.sectionLabel}>Models</span>
+          <button
+            className={styles.sectionAddBtn}
+            onClick={() => setCreatingModel(true)}
+            title="New model"
+          >
+            <PlusIcon />
+          </button>
+        </div>
+
+        {state.models.length > 6 && (
+          <input
+            className={styles.searchInput}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search models"
+          />
+        )}
+
+        {creatingModel && (
+          <div className={styles.inlineCreate}>
+            <input
+              autoFocus
+              className={styles.inlineInput}
+              value={newModelName}
+              onChange={(e) => setNewModelName(e.target.value)}
+              onBlur={() => !newModelName.trim() && setCreatingModel(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') createModel()
+                if (e.key === 'Escape') {
+                  setCreatingModel(false)
+                  setNewModelName('')
+                }
+              }}
+              placeholder="Model name"
+            />
+          </div>
+        )}
+
+        <div className={styles.modelScroll}>
+          <ModelList
+            models={visibleModels}
+            activeId={state.activeModelId ?? undefined}
+            onSelect={openModel}
+            onRefresh={loadModels}
+          />
+        </div>
+
+        {archivedCount > 0 && (
+          <button
+            className={styles.archiveToggle}
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            {showArchived ? 'Hide' : 'Show'} archived ({archivedCount})
+          </button>
+        )}
       </div>
 
-      <div className={styles.sections}>
-        {/* Library section */}
-        <div className={styles.section}>
-          <button
-            className={styles.sectionHeader}
-            onClick={() => toggleSection('library')}
-          >
-            <ChevronIcon expanded={expandedSections.has('library')} />
-            <span>Library</span>
-          </button>
-          {expandedSections.has('library') && (
-            <div className={styles.sectionBody}>
-              <button
-                className={`${styles.treeItem} ${!state.activeFilter.collectionId && !state.activeFilter.folderPath && !state.activeFilter.modelId ? styles.active : ''}`}
-                onClick={handleLibrarySelect}
-              >
-                <GridIcon />
-                <span>All photos</span>
-                <span className={styles.count}>{state.photos.length}</span>
-              </button>
-              <FileTree
-                nodes={fileTree}
-                onSelect={handleFolderSelect}
-                activePath={state.activeFilter.folderPath}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Collections section */}
-        <div className={styles.section}>
-          <button
-            className={styles.sectionHeader}
-            onClick={() => toggleSection('collections')}
-          >
-            <ChevronIcon expanded={expandedSections.has('collections')} />
-            <span>Collections</span>
-            <button
-              className={styles.addBtn}
-              onClick={(e) => { e.stopPropagation(); setCreatingCollection(true) }}
-              title="New collection"
-            >
-              <PlusIcon />
-            </button>
-          </button>
-          {expandedSections.has('collections') && (
-            <div className={styles.sectionBody}>
-              {creatingCollection && (
-                <div className={styles.inlineCreate}>
-                  <input
-                    autoFocus
-                    className={styles.inlineInput}
-                    value={newCollectionName}
-                    onChange={(e) => setNewCollectionName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') createCollection()
-                      if (e.key === 'Escape') { setCreatingCollection(false); setNewCollectionName('') }
-                    }}
-                    placeholder="Collection name"
-                  />
-                </div>
-              )}
-              <CollectionList
-                collections={state.collections}
-                activeId={state.activeFilter.collectionId}
-                onSelect={handleCollectionSelect}
-                onRefresh={loadCollections}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Models section */}
-        <div className={styles.section}>
-          <button
-            className={styles.sectionHeader}
-            onClick={() => toggleSection('models')}
-          >
-            <ChevronIcon expanded={expandedSections.has('models')} />
-            <span>Models</span>
-            <button
-              className={styles.addBtn}
-              onClick={(e) => { e.stopPropagation(); setCreatingModel(true) }}
-              title="New model"
-            >
-              <PlusIcon />
-            </button>
-          </button>
-          {expandedSections.has('models') && (
-            <div className={styles.sectionBody}>
-              {creatingModel && (
-                <div className={styles.inlineCreate}>
-                  <input
-                    autoFocus
-                    className={styles.inlineInput}
-                    value={newModelName}
-                    onChange={(e) => setNewModelName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') createModel()
-                      if (e.key === 'Escape') { setCreatingModel(false); setNewModelName('') }
-                    }}
-                    placeholder="Model name"
-                  />
-                </div>
-              )}
-              <ModelList
-                models={state.models}
-                activeId={state.activeFilter.modelId}
-                onSelect={handleModelSelect}
-                onRefresh={loadModels}
-              />
-            </div>
-          )}
-        </div>
+      <div className={styles.footer}>
+        <button className={styles.footerItem} onClick={() => window.api.rebuildThumbnails()}>
+          <RefreshIcon />
+          <span>Rebuild previews</span>
+        </button>
       </div>
     </aside>
   )
 }
 
-function ChevronIcon({ expanded }: { expanded: boolean }): JSX.Element {
+function HearthLogo(): JSX.Element {
   return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 150ms ease', flexShrink: 0 }}
-    >
-      <polyline points="9 18 15 12 9 6" />
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className={styles.brandIcon}>
+      <path
+        d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"
+        fill="var(--accent)"
+      />
     </svg>
   )
 }
 
-function ChevronRightIcon(): JSX.Element {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
-}
-
-function ChevronLeftIcon(): JSX.Element {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
-}
-
 function PlusIcon(): JSX.Element {
-  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
 }
 
-function FolderIcon(): JSX.Element {
-  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-}
-
-function GridIcon(): JSX.Element {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+function RefreshIcon(): JSX.Element {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  )
 }
